@@ -5,7 +5,7 @@
 
 ## O que é o HIVE
 
-Sistema para gestão de atividades focado nas fases de **Homologação (UAT)** e **Cutover** de projetos de TI. Um projeto pode ter UAT, Cutover, ou os dois modos coexistindo, de forma independente. TCC de Ciência da Computação (EEP/FUMEP).
+Sistema para gestão de atividades focado nas fases de **Homologação (UAT)** e **Cutover** de projetos de TI. Uma mesma iniciativa pode ter uma frente em UAT e uma frente em Cutover — mas isso são **dois `Project` totalmente distintos e sem nenhum vínculo no banco** (hierarquia, equipe, atividades e issues de um não têm nada a ver com o outro), que só podem coincidir no nome por convenção de quem cria (ver "Arquitetura de apps" → `projects/`). TCC de Ciência da Computação (EEP/FUMEP).
 
 Este repositório é **só o backend** (Django + DRF). O frontend (React) vive em repositório separado, no mesmo workspace. Integração entre os dois será detalhada depois — por enquanto, trabalhe assumindo que o frontend consome esta API via REST/JSON.
 
@@ -19,7 +19,7 @@ Primeiro app de domínio criado: **`apps/accounts`** — model `Usuario` (`AUTH_
 
 **Branch atual:** `feature/accounts-entra-auth` (a partir de `feature/django-bootstrap`, que ainda não tinha entrado na `dev`). `apps/accounts` está implementado, testado (9 testes, `manage.py check`/`migrate`/`createsuperuser` verificados localmente) e pronto pra revisão — ainda **não commitado/PR aberto** (fica a cargo do usuário via GitHub Desktop/web).
 
-**Próximo passo — EM ABERTO, decisão pendente antes de codar:** `apps/projects` (Project, HierarchyLevel, Membership, CustomField) é o próximo app, mas o design do model `Project` está **bloqueado pelo item 8** da lista de divergências abaixo (`Project.mode` único no front vs. regra de coexistência UAT+Cutover documentada aqui). Antes de continuar: decidir com quem mantém `hive-front-end` se o backend segue o front (modo único) ou implementa dual-mode real. As demais peças de `apps/projects` (HierarchyLevel com níveis configuráveis + "Atividade" fixo, Membership com múltiplos papéis por usuário via `unique_together(usuario, projeto, papel)`, CustomField) já foram desenhadas por leitura de `hive-front-end/src/types/project.ts`, `NewProjectModal.tsx` e `useProjects.ts`, e não dependem dessa decisão. `apps/activities` e `apps/issues` continuam bloqueados pelos pontos 1, 2, 4, 5 e 6.
+**Próximo passo:** `apps/projects` (Project, HierarchyLevel, Membership, CustomField) — item 8 das divergências (abaixo) foi resolvido em 2026-08-26: `Project.mode` é único e fixo na criação, exatamente como o front já implementa, e "UAT + Cutover coexistindo" significa dois `Project` sem nenhum vínculo entre si (nem FK, nem campo de agrupamento — só podem ter o mesmo nome por escolha de quem cria). Design de `apps/projects` (HierarchyLevel com níveis configuráveis + "Atividade" fixo, Membership com múltiplos papéis por usuário via `unique_together(usuario, projeto, papel)`, CustomField) já levantado por leitura de `hive-front-end/src/types/project.ts`, `NewProjectModal.tsx` e `useProjects.ts` — pronto pra implementar. `apps/activities` e `apps/issues` continuam bloqueados pelos pontos 1, 2, 4, 5 e 6.
 
 ## Stack confirmada
 
@@ -35,36 +35,39 @@ Primeiro app de domínio criado: **`apps/accounts`** — model `Usuario` (`AUTH_
 
 ```text
 hive-back-end/
-├── apps/                    # vazio — apps de domínio entram aqui, um por entidade de negócio
-├── common/                  # recursos compartilhados por 2+ apps
+├── apps/
+│   └── accounts/            # identidade do usuário + autenticação Entra ID (única app pronta hoje)
+├── common/                  # recursos compartilhados por 2+ apps — ainda vazio, nenhum app usa hoje
 │   ├── exceptions/          # tratamento de exceções da API
 │   ├── pagination/          # paginação reutilizável
 │   ├── permissions/         # permissions DRF compartilhadas (papéis: Gestor/Tester/Dev)
 │   ├── utils/                # funções auxiliares
 │   └── validators/          # validações compartilhadas
-├── config/                  # settings, urls, wsgi/asgi — vazio, ainda não iniciado
+├── config/                  # settings (base/local/production), urls, wsgi/asgi
 ├── integrations/
 │   └── microsoft/
-│       └── entra/            # validação de token / integração com Microsoft Entra ID
-├── tests/                    # testes gerais e de integração
+│       └── entra/            # validação de token (EntraTokenValidator) — implementado
+├── tests/
+│   └── integrations/         # testes de integrations/, espelhando o módulo (ver "Convenções de código")
+├── manage.py
 ├── requirements.txt
-└── .env.example (a criar — .env nunca é commitado)
+└── .env.example (.env nunca é commitado — cada dev cria o seu)
 ```
 
 Regras de responsabilidade das pastas (do README): `common/` é só para código compartilhado por 2+ apps, não é entidade própria. `integrations/` é para serviços externos — a integração com Microsoft Entra ID fica especificamente em `integrations/microsoft/entra/`. `apps/` recebe um app Django por domínio de negócio, nunca por camada técnica.
 
-## Arquitetura de apps — PLANEJADA (ainda não criada no código)
+## Arquitetura de apps
 
 Convenção validada: **um app Django por domínio de negócio**, não por camada técnica. Views finas (validação no serializer, decisão de negócio em `services.py` do app dono). Toda transição de status relevante grava trilha de auditoria via `apps/audit/services.py`, chamada a partir do app de origem — nunca direto da view.
 
-Domínios previstos em `apps/`:
+Domínios previstos em `apps/` (✅ = implementado, ⏳ = planejado):
 
-- **`accounts/`** — identidade do usuário (perfil + vínculo Microsoft Entra ID) e autenticação DRF via token OIDC. NÃO guarda papel nem vínculo com projeto.
-- **`projects/`** — `Project` (modos UAT/Cutover independentes), `HierarchyLevel` (nomes configuráveis; UAT = 3 níveis fixos, Cutover = 2 níveis fixos, nível final sempre "Atividade"), `Membership` (usuário + projeto + papel: Gestor de Projetos / Tester / Desenvolvedor — um usuário pode ter múltiplos papéis), `CustomField` (schema de campos customizáveis por projeto).
-- **`activities/`** — `Activity` e `CustomFieldValue`. `services.py` = liberação por predecessores (E lógico — todos os predecessores precisam estar Concluído) e transições de status. `management/commands/` = importação em massa via Excel (template padrão, coluna temporária de predecessores resolvida na importação, IDs únicos imutáveis após importar).
-- **`issues/`** — `Issue` vinculada a `Activity`. `services.py` = transições de status e efeito sobre a Activity.
-- **`audit/`** — `AuditTrail` genérico (GenericForeignKey, status_anterior/novo, data_hora, usuário). Fonte da Curva S e do tempo médio de resolução.
-- **`dashboards/`** — sem `models.py`, só agrega `Activity`/`Issue`/`AuditTrail`: SPI, Curva S, cards, donuts, barras, ranking.
+- **✅ `accounts/`** — identidade do usuário (perfil + vínculo Microsoft Entra ID) e autenticação DRF via token OIDC (`EntraIDAuthentication`, auto-provisiona no primeiro acesso). NÃO guarda papel nem vínculo com projeto.
+- **⏳ `projects/`** — `Project` (`nome`, `modo` — UAT ou Cutover, único e fixo na criação; **duas frentes UAT+Cutover da mesma iniciativa são dois `Project` distintos, sem nenhum vínculo no banco, só podendo coincidir no nome**), `HierarchyLevel` (nomes configuráveis por projeto; UAT = 3 níveis fixos, Cutover = 2 níveis fixos, nível final sempre "Atividade"), `Membership` (usuário + projeto + papel: Gestor de Projetos / Tester / Desenvolvedor — um usuário pode ter múltiplos papéis, uma linha de `Membership` por papel), `CustomField` (schema de campos customizáveis por projeto).
+- **⏳ `activities/`** — `Activity` e `CustomFieldValue`. `services.py` = liberação por predecessores (E lógico — todos os predecessores precisam estar Concluído) e transições de status. `management/commands/` = importação em massa via Excel (template padrão, coluna temporária de predecessores resolvida na importação, IDs únicos imutáveis após importar).
+- **⏳ `issues/`** — `Issue` vinculada a `Activity`. `services.py` = transições de status e efeito sobre a Activity.
+- **⏳ `audit/`** — `AuditTrail` genérico (GenericForeignKey, status_anterior/novo, data_hora, usuário). Fonte da Curva S e do tempo médio de resolução.
+- **⏳ `dashboards/`** — sem `models.py`, só agrega `Activity`/`Issue`/`AuditTrail`: SPI, Curva S, cards, donuts, barras, ranking.
 
 Nomenclatura de campos/models em **português**, alinhada ao vocabulário já fixado nas regras de negócio (RN01–RN44).
 
@@ -153,6 +156,6 @@ O front-end já fixou nomes de campo e comportamentos ao implementar as telas de
 5. **RN16 (transição Aberta→Em análise da Issue) implementada como manual no mockup, não automática.** O comentário original no HTML de referência (citado na spec `2026-08-07-project-activities-list-design.md` do front) registra: "PENDENTE: atualizar o texto da RN16 no documento antes da entrega final, validar com o Clerivaldo". A seção "Status da Issue" deste CLAUDE.md ainda documenta a transição como automática ("Em análise (auto ao Dev acessar)") — precisa decidir qual das duas vira a regra real antes de implementar `apps/issues/services.py`.
 6. **Limiares de Aging/Risco de Issue hardcoded no front** (`alerta: 2 dias, risco: 6 dias`, fixos para o modo UAT — `hive-front-end/src/utils/issueIndicators.ts`), sem equivalente nas RN01–RN44 aqui documentadas. A spec do front já assume que isso deveria ser configurável por projeto/modo via uma futura tela "Papéis & Config" — se confirmado, o backend precisa de um lugar para esse limiar (provável candidato: mais um `CustomField`/config em `apps/projects`, não em `apps/issues`).
 7. **Papel do usuário (`Membership`) ainda não integrado no front — parcialmente resolvido.** `apps/accounts` já existe (`GET /api/accounts/me/` retorna a identidade validada via Entra ID), mas ainda não expõe papel/projeto — falta `apps/projects::Membership`. Até lá, `useCurrentUser` no front continua retornando `"Gestor de Projetos"` hardcoded.
-8. **`Project.mode` é único e exclusivo no front (`"uat" | "cutover"`), travado na criação — contradiz a regra de coexistência independente descrita na seção "O que é o HIVE" e em "Arquitetura de apps" deste CLAUDE.md.** `hive-front-end/src/types/project.ts` (`ProjectMode`), `NewProjectModal.tsx` ("O modo não pode ser alterado após a criação do projeto") e todo `useProjects.ts` (mock data) assumem modo único. Não existe, em nenhum lugar do front, um projeto com UAT e Cutover simultâneos, nem UI para isso. **BLOQUEIA o modelo `Project` de `apps/projects`** (não só `activities`/`issues` como os demais itens desta lista) — decisão pendente: seguir o front (modo único, mais simples) ou implementar dual-mode real (exigindo refatoração do front depois). Descoberto em 2026-08-26, ver também os defaults de `HierarchyLevel` por modo em `NewProjectModal.tsx::LEVEL_DEFAULTS` (UAT: 2 níveis configuráveis + "Atividade" fixo = 3; Cutover: 1 nível configurável + "Atividade" fixo = 2 — essa parte já bate com "UAT = 3 níveis fixos, Cutover = 2 níveis fixos").
+~~8. `Project.mode` único no front vs. regra de coexistência.~~ **RESOLVIDO em 2026-08-26, confirmado com o usuário.** Não era uma divergência de verdade — era uma leitura errada da regra de negócio por parte do agente. "UAT e Cutover coexistindo" nunca significou um `Project` só com as duas frentes ativas ao mesmo tempo: significa **dois `Project` totalmente distintos e independentes** (hierarquia, equipe, atividades, issues — nada em comum), que só podem coincidir no nome por escolha de quem cria, sem NENHUM vínculo no banco (nem FK, nem campo de agrupamento — decisão explícita do usuário). Ou seja, `Project.mode` único e fixo na criação, exatamente como o front já implementa (`hive-front-end/src/types/project.ts`, `NewProjectModal.tsx`), está correto. Os defaults de `HierarchyLevel` por modo em `NewProjectModal.tsx::LEVEL_DEFAULTS` (UAT: 2 níveis configuráveis + "Atividade" fixo = 3; Cutover: 1 nível configurável + "Atividade" fixo = 2) também já batem com "UAT = 3 níveis fixos, Cutover = 2 níveis fixos".
 
-Esses pontos vieram de uma leitura completa de `hive-front-end/CLAUDE.md`, das 6 specs em `docs/superpowers/specs/` e dos arquivos de tipo/indicadores citados acima (sessão de 2026-08-21, item 8 adicionado em 2026-08-26). Ao resolver cada um, atualizar esta seção (remover o item resolvido) e, se a decisão mudar o contrato já consumido pelo front, sinalizar para quem mantém `hive-front-end`.
+Esses pontos vieram de uma leitura completa de `hive-front-end/CLAUDE.md`, das 6 specs em `docs/superpowers/specs/` e dos arquivos de tipo/indicadores citados acima (sessão de 2026-08-21, item 8 adicionado e resolvido em 2026-08-26). Ao resolver cada um, atualizar esta seção e, se a decisão mudar o contrato já consumido pelo front, sinalizar para quem mantém `hive-front-end`.
