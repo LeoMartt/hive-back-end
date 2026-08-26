@@ -21,6 +21,13 @@ environ.Env.read_env(BASE_DIR / ".env")
 SECRET_KEY = env("DJANGO_SECRET_KEY")
 
 
+# Microsoft Entra ID — validação do Access Token enviado pelo frontend
+# https://learn.microsoft.com/en-us/entra/identity-platform/access-tokens
+
+AZURE_TENANT_ID = env("AZURE_TENANT_ID")
+AZURE_CLIENT_ID = env("AZURE_CLIENT_ID")
+
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -33,7 +40,10 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
     "storages",
+    "apps.accounts",
 ]
+
+AUTH_USER_MODEL = "accounts.Usuario"
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -118,4 +128,16 @@ MAILERS = {
     "default": {
         "BACKEND": "django.core.mail.backends.console.EmailBackend",
     },
+}
+
+
+# Django REST Framework
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "apps.accounts.authentication.EntraIDAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
 }
