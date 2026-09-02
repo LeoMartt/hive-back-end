@@ -121,6 +121,8 @@ http://127.0.0.1:8000/
 ```text
 hive-back-end/
 ├── apps/
+│   ├── accounts/
+│   └── projects/
 ├── common/
 │   ├── exceptions/
 │   ├── pagination/
@@ -150,7 +152,7 @@ Exemplos futuros:
 
 ```text
 apps/
-├── users/
+├── accounts/
 ├── projects/
 └── activities/
 ```
@@ -195,7 +197,15 @@ Contém testes gerais e testes de integração do projeto.
 
 O frontend realiza o login com Microsoft Entra ID utilizando MSAL.
 
-O backend será responsável por validar os Access Tokens enviados pelo frontend antes de permitir acesso aos endpoints protegidos.
+O backend valida os Access Tokens enviados pelo frontend antes de permitir acesso aos endpoints protegidos.
+
+A validação é feita por `EntraIDAuthentication`, usando `EntraTokenValidator` para verificar assinatura RS256 via JWKS, issuer, audience e expiração.
+
+Endpoint de validação da identidade autenticada:
+
+```text
+GET /api/accounts/me/
+```
 
 O fluxo esperado é:
 
@@ -213,7 +223,23 @@ Validação do Token
 Endpoint protegido
 ```
 
-A implementação da validação dos tokens será adicionada posteriormente.
+## Projects
+
+O app `apps/projects` contém o primeiro bloco do domínio de projetos:
+
+* `Project`;
+* `NoHierarquia`;
+* `Papel`;
+* `Membership`.
+
+Rotas iniciais:
+
+```text
+GET /api/projects/
+GET /api/projects
+```
+
+A resposta da listagem já segue o contrato atual do frontend para `projectsApi.list()`.
 
 ## Git
 

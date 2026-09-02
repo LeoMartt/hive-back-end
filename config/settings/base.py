@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "storages",
     "apps.accounts",
+    "apps.projects",
 ]
 
 AUTH_USER_MODEL = "accounts.Usuario"

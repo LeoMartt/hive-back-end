@@ -26,6 +26,7 @@ class EntraTokenValidator:
     def __init__(self, tenant_id: str, client_id: str):
         self.tenant_id = tenant_id
         self.client_id = client_id
+        self.audiences = (client_id, f"api://{client_id}")
         self.issuer = f"https://login.microsoftonline.com/{tenant_id}/v2.0"
         self.jwks_url = f"https://login.microsoftonline.com/{tenant_id}/discovery/v2.0/keys"
 
@@ -37,7 +38,7 @@ class EntraTokenValidator:
                 token,
                 signing_key.key,
                 algorithms=ALGORITMOS_ACEITOS,
-                audience=self.client_id,
+                audience=self.audiences,
                 issuer=self.issuer,
             )
         except jwt.PyJWTError as exc:
