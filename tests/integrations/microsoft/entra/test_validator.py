@@ -27,7 +27,7 @@ class EntraTokenValidatorTests(SimpleTestCase):
             "token-valido",
             "chave",
             algorithms=["RS256"],
-            audience=CLIENT_ID,
+            audience=(CLIENT_ID, f"api://{CLIENT_ID}"),
             issuer=f"https://login.microsoftonline.com/{TENANT_ID}/v2.0",
         )
 
