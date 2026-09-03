@@ -1,10 +1,11 @@
 from django.urls import reverse
 from django.utils.dateparse import parse_datetime
+from uuid import uuid4
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import Usuario
 
-from ..models import Membership, Papel, Project
+from ..models import Membership, NoHierarquia, Papel, Project
 
 
 class ProjectListViewTests(APITestCase):
@@ -119,3 +120,211 @@ class ProjectListViewTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual({project["name"] for project in response.data}, {self.crm.nome, self.erp.nome})
+
+    def test_cria_projeto_com_memberships_do_payload_e_gestor_criador(self):
+        self.client.force_authenticate(user=self.gestor)
+        entra_id = uuid4()
+        payload = {
+            "name": "Portal RH",
+            "description": "Homologação do onboarding",
+            "mode": "uat",
+            "hierarchyLevels": ["Área", "Cenário"],
+            "team": [
+                {
+                    "id": str(entra_id),
+                    "initials": "DU",
+                    "name": "Dev Um",
+                    "email": "dev.um@fumep.edu.br",
+                    "role": "Desenvolvedor",
+                }
+            ],
+        }
+
+        response = self.client.post(self.url, payload, format="json")
+
+        self.assertEqual(response.status_code, 201)
+        project = Project.objects.get(nome="Portal RH")
+        self.assertEqual(project.criado_por, self.gestor)
+        self.assertEqual(project.nomes_niveis_hierarquia, ["Área", "Cenário"])
+        self.assertTrue(
+            Membership.objects.filter(
+                usuario=self.gestor,
+                projeto=project,
+                papel__codigo=Papel.Codigo.GESTOR,
+            ).exists()
+        )
+        self.assertTrue(
+            Membership.objects.filter(
+                usuario__entra_object_id=entra_id,
+                projeto=project,
+                papel__codigo=Papel.Codigo.DEV,
+            ).exists()
+        )
+        self.assertIn(
+            {
+                "id": str(entra_id),
+                "initials": "DU",
+                "name": "Dev Um",
+                "email": "dev.um@fumep.edu.br",
+                "role": "Desenvolvedor",
+            },
+            response.data["team"],
+        )
+
+    def test_cria_projeto_cutover_rejeita_dois_niveis(self):
+        self.client.force_authenticate(user=self.gestor)
+        payload = {
+            "name": "ERP Cutover",
+            "description": "",
+            "mode": "cutover",
+            "hierarchyLevels": ["Módulo", "Cenário"],
+            "team": [],
+        }
+
+        response = self.client.post(self.url, payload, format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("hierarchyLevels", response.data)
+
+    def test_detalhe_do_projeto_retorna_configuracoes(self):
+        self.client.force_authenticate(user=self.gestor)
+
+        response = self.client.get(reverse("projects:detail", kwargs={"project_id": self.crm.id}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], str(self.crm.id))
+        self.assertEqual(response.data["description"], self.crm.descricao)
+        self.assertEqual(response.data["agingAlertaDias"], 2)
+        self.assertEqual(response.data["agingRiscoDias"], 6)
+        self.assertEqual(response.data["anexoMaxMb"], 10)
+        self.assertTrue(response.data["exigirEvidenciaAtividade"])
+        self.assertTrue(response.data["exigirEvidenciaIssue"])
+
+    def test_gestor_atualiza_configuracoes_do_projeto(self):
+        self.client.force_authenticate(user=self.gestor)
+        url = reverse("projects:detail", kwargs={"project_id": self.crm.id})
+        payload = {
+            "name": "CRM Homologação Comercial 2",
+            "hierarchyLevels": ["Frente", "Cenário"],
+            "agingAlertaDias": 3,
+            "agingRiscoDias": 8,
+            "anexoMaxMb": 15,
+            "exigirEvidenciaIssue": False,
+        }
+
+        response = self.client.patch(url, payload, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.crm.refresh_from_db()
+        self.assertEqual(self.crm.nome, "CRM Homologação Comercial 2")
+        self.assertEqual(self.crm.nomes_niveis_hierarquia, ["Frente", "Cenário"])
+        self.assertEqual(self.crm.aging_alerta_dias, 3)
+        self.assertEqual(self.crm.aging_risco_dias, 8)
+        self.assertEqual(self.crm.anexo_max_mb, 15)
+        self.assertFalse(self.crm.exigir_evidencia_issue)
+
+    def test_usuario_sem_papel_gestor_nao_atualiza_projeto(self):
+        Membership.objects.create(
+            usuario=self.outro_usuario,
+            projeto=self.crm,
+            papel=self.papel_tester,
+        )
+        self.client.force_authenticate(user=self.outro_usuario)
+
+        response = self.client.patch(
+            reverse("projects:detail", kwargs={"project_id": self.crm.id}),
+            {"name": "Não deve mudar"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_lista_papeis(self):
+        self.client.force_authenticate(user=self.gestor)
+
+        response = self.client.get(reverse("projects:roles-list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [papel["codigo"] for papel in response.data],
+            [Papel.Codigo.GESTOR, Papel.Codigo.TESTER, Papel.Codigo.DEV],
+        )
+
+    def test_gestor_cria_e_lista_nos_de_hierarquia(self):
+        self.client.force_authenticate(user=self.gestor)
+        url = reverse("projects:hierarchy-list", kwargs={"project_id": self.crm.id})
+
+        raiz_response = self.client.post(
+            url,
+            {"level": 1, "name": "Fiscal", "order": 1},
+            format="json",
+        )
+        filho_response = self.client.post(
+            url,
+            {
+                "parentId": raiz_response.data["id"],
+                "level": 2,
+                "name": "Cenário A",
+                "order": 1,
+            },
+            format="json",
+        )
+        list_response = self.client.get(url)
+
+        self.assertEqual(raiz_response.status_code, 201)
+        self.assertEqual(filho_response.status_code, 201)
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(len(list_response.data), 2)
+        self.assertEqual(list_response.data[0]["name"], "Fiscal")
+        self.assertEqual(list_response.data[1]["parentId"], raiz_response.data["id"])
+
+    def test_cutover_rejeita_no_de_hierarquia_nivel_2(self):
+        self.client.force_authenticate(user=self.outro_usuario)
+        url = reverse("projects:hierarchy-list", kwargs={"project_id": self.erp.id})
+        raiz = NoHierarquia.objects.create(
+            projeto=self.erp,
+            nivel=NoHierarquia.Nivel.NIVEL_1,
+            nome="Módulo Financeiro",
+        )
+
+        response = self.client.post(
+            url,
+            {"parentId": str(raiz.id), "level": 2, "name": "Cenário A"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_gestor_convida_e_remove_membership(self):
+        self.client.force_authenticate(user=self.gestor)
+        url = reverse("projects:memberships-list", kwargs={"project_id": self.crm.id})
+        entra_id = uuid4()
+
+        create_response = self.client.post(
+            url,
+            {
+                "id": str(entra_id),
+                "initials": "TU",
+                "name": "Tester Um",
+                "email": "tester.um@fumep.edu.br",
+                "role": "Tester",
+            },
+            format="json",
+        )
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.data["id"], str(entra_id))
+        self.assertEqual(create_response.data["roleCode"], Papel.Codigo.TESTER)
+
+        delete_response = self.client.delete(
+            reverse(
+                "projects:memberships-detail",
+                kwargs={
+                    "project_id": self.crm.id,
+                    "membership_id": create_response.data["membershipId"],
+                },
+            )
+        )
+
+        self.assertEqual(delete_response.status_code, 204)
+        self.assertFalse(Membership.objects.filter(id=create_response.data["membershipId"]).exists())
