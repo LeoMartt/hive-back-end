@@ -33,6 +33,7 @@ class ProjectModelTests(TestCase):
         self.assertEqual(project.anexo_max_mb, 10)
         self.assertTrue(project.exigir_evidencia_atividade)
         self.assertTrue(project.exigir_evidencia_issue)
+        self.assertTrue(project.ativo)
         self.assertEqual(project.proximo_codigo_atividade, 1)
         self.assertEqual(project.proximo_codigo_issue, 1)
         self.assertEqual(project.nomes_niveis_hierarquia, ["Área", "Cenário"])
@@ -48,6 +49,61 @@ class ProjectModelTests(TestCase):
 
         with self.assertRaises(ValidationError):
             project.full_clean()
+
+    def test_nao_permite_nome_e_modo_repetidos_para_projetos_ativos(self):
+        Project.objects.create(
+            nome="ERP",
+            modo=Project.Modo.UAT,
+            nivel1_nome="Área",
+            nivel2_nome="Cenário",
+            criado_por=self.usuario,
+        )
+        duplicado = Project(
+            nome="ERP",
+            modo=Project.Modo.UAT,
+            nivel1_nome="Área",
+            nivel2_nome="Cenário",
+            criado_por=self.usuario,
+        )
+
+        with self.assertRaises(ValidationError):
+            duplicado.full_clean()
+
+    def test_permite_nome_repetido_em_modos_diferentes(self):
+        Project.objects.create(
+            nome="ERP",
+            modo=Project.Modo.UAT,
+            nivel1_nome="Área",
+            nivel2_nome="Cenário",
+            criado_por=self.usuario,
+        )
+        cutover = Project(
+            nome="ERP",
+            modo=Project.Modo.CUTOVER,
+            nivel1_nome="Frente",
+            criado_por=self.usuario,
+        )
+
+        cutover.full_clean()
+
+    def test_permite_recriar_nome_e_modo_de_projeto_inativo(self):
+        Project.objects.create(
+            nome="ERP",
+            modo=Project.Modo.UAT,
+            nivel1_nome="Área",
+            nivel2_nome="Cenário",
+            criado_por=self.usuario,
+            ativo=False,
+        )
+        novo = Project(
+            nome="ERP",
+            modo=Project.Modo.UAT,
+            nivel1_nome="Área",
+            nivel2_nome="Cenário",
+            criado_por=self.usuario,
+        )
+
+        novo.full_clean()
 
 
 class NoHierarquiaModelTests(TestCase):

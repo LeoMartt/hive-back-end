@@ -1,6 +1,8 @@
-from django.urls import reverse
-from django.utils.dateparse import parse_datetime
 from uuid import uuid4
+
+from django.urls import reverse
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import Usuario
@@ -105,21 +107,77 @@ class ProjectListViewTests(APITestCase):
             ],
         )
 
-    def test_lista_tambem_funciona_sem_barra_final_para_frontend(self):
+    def test_rota_sem_barra_final_nao_e_contrato_da_api(self):
         self.client.force_authenticate(user=self.gestor)
 
         response = self.client.get("/api/projects")
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.status_code, 301)
+        self.assertTrue(response.url.endswith("/api/projects/"))
 
-    def test_staff_lista_todos_os_projetos(self):
+    def test_staff_lista_todos_os_projetos_ativos(self):
         self.client.force_authenticate(user=self.admin)
+        self.crm.ativo = False
+        self.crm.save(update_fields=["ativo"])
 
         response = self.client.get(self.url)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual({project["name"] for project in response.data}, {self.crm.nome, self.erp.nome})
+        self.assertEqual({project["name"] for project in response.data}, {self.erp.nome})
+
+    def test_lista_ignora_projetos_inativos(self):
+        self.client.force_authenticate(user=self.gestor)
+        self.crm.ativo = False
+        self.crm.save(update_fields=["ativo"])
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, [])
+
+    def test_lista_ordena_por_criacao_mais_recente(self):
+        self.client.force_authenticate(user=self.gestor)
+        mais_novo = Project.objects.create(
+            nome="Projeto Mais Novo",
+            modo=Project.Modo.CUTOVER,
+            nivel1_nome="Frente",
+            criado_por=self.gestor,
+        )
+        Membership.objects.create(
+            usuario=self.gestor,
+            projeto=mais_novo,
+            papel=self.papel_gestor,
+        )
+        Project.objects.filter(id=mais_novo.id).update(criado_em=timezone.now())
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data[0]["id"], str(mais_novo.id))
+
+    def test_lista_paginar_quando_usuario_tem_mais_de_dez_projetos(self):
+        self.client.force_authenticate(user=self.gestor)
+        for indice in range(10):
+            project = Project.objects.create(
+                nome=f"Projeto Extra {indice}",
+                modo=Project.Modo.UAT,
+                nivel1_nome="Área",
+                nivel2_nome="Cenário",
+                criado_por=self.gestor,
+            )
+            Membership.objects.create(
+                usuario=self.gestor,
+                projeto=project,
+                papel=self.papel_gestor,
+            )
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 11)
+        self.assertIn("next", response.data)
+        self.assertIn("previous", response.data)
+        self.assertEqual(len(response.data["results"]), 10)
 
     def test_cria_projeto_com_memberships_do_payload_e_gestor_criador(self):
         self.client.force_authenticate(user=self.gestor)
@@ -170,6 +228,35 @@ class ProjectListViewTests(APITestCase):
             },
             response.data["team"],
         )
+
+    def test_nao_cria_projeto_ativo_com_mesmo_nome_e_modo(self):
+        self.client.force_authenticate(user=self.gestor)
+        payload = {
+            "name": self.crm.nome,
+            "description": "",
+            "mode": "uat",
+            "hierarchyLevels": ["Área", "Cenário"],
+            "team": [],
+        }
+
+        response = self.client.post(self.url, payload, format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("nome", response.data)
+
+    def test_cria_projeto_com_mesmo_nome_em_modo_diferente(self):
+        self.client.force_authenticate(user=self.gestor)
+        payload = {
+            "name": self.crm.nome,
+            "description": "",
+            "mode": "cutover",
+            "hierarchyLevels": ["Frente"],
+            "team": [],
+        }
+
+        response = self.client.post(self.url, payload, format="json")
+
+        self.assertEqual(response.status_code, 201)
 
     def test_cria_projeto_cutover_rejeita_dois_niveis(self):
         self.client.force_authenticate(user=self.gestor)
@@ -239,6 +326,31 @@ class ProjectListViewTests(APITestCase):
 
         self.assertEqual(response.status_code, 403)
 
+    def test_gestor_desativa_projeto_em_vez_de_apagar(self):
+        self.client.force_authenticate(user=self.gestor)
+
+        response = self.client.delete(reverse("projects:detail", kwargs={"project_id": self.crm.id}))
+
+        self.assertEqual(response.status_code, 204)
+        self.crm.refresh_from_db()
+        self.assertFalse(self.crm.ativo)
+        self.assertTrue(Project.objects.filter(id=self.crm.id).exists())
+        self.assertEqual(self.client.get(self.url).data, [])
+
+    def test_usuario_sem_papel_gestor_nao_desativa_projeto(self):
+        Membership.objects.create(
+            usuario=self.outro_usuario,
+            projeto=self.crm,
+            papel=self.papel_tester,
+        )
+        self.client.force_authenticate(user=self.outro_usuario)
+
+        response = self.client.delete(reverse("projects:detail", kwargs={"project_id": self.crm.id}))
+
+        self.assertEqual(response.status_code, 403)
+        self.crm.refresh_from_db()
+        self.assertTrue(self.crm.ativo)
+
     def test_lista_papeis(self):
         self.client.force_authenticate(user=self.gestor)
 
@@ -277,6 +389,24 @@ class ProjectListViewTests(APITestCase):
         self.assertEqual(len(list_response.data), 2)
         self.assertEqual(list_response.data[0]["name"], "Fiscal")
         self.assertEqual(list_response.data[1]["parentId"], raiz_response.data["id"])
+
+    def test_no_de_hierarquia_nao_pode_ser_removido(self):
+        self.client.force_authenticate(user=self.gestor)
+        raiz = NoHierarquia.objects.create(
+            projeto=self.crm,
+            nivel=NoHierarquia.Nivel.NIVEL_1,
+            nome="Fiscal",
+        )
+
+        response = self.client.delete(
+            reverse(
+                "projects:hierarchy-detail",
+                kwargs={"project_id": self.crm.id, "node_id": raiz.id},
+            )
+        )
+
+        self.assertEqual(response.status_code, 405)
+        self.assertTrue(NoHierarquia.objects.filter(id=raiz.id).exists())
 
     def test_cutover_rejeita_no_de_hierarquia_nivel_2(self):
         self.client.force_authenticate(user=self.outro_usuario)

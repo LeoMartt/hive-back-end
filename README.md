@@ -236,10 +236,32 @@ Rotas iniciais:
 
 ```text
 GET /api/projects/
-GET /api/projects
+POST /api/projects/
+GET /api/projects/<project_id>/
+PATCH /api/projects/<project_id>/
+DELETE /api/projects/<project_id>/
+GET /api/projects/roles/
+GET /api/projects/<project_id>/hierarchy/
+POST /api/projects/<project_id>/hierarchy/
+PATCH /api/projects/<project_id>/hierarchy/<node_id>/
+GET /api/projects/<project_id>/memberships/
+POST /api/projects/<project_id>/memberships/
+DELETE /api/projects/<project_id>/memberships/<membership_id>/
 ```
 
-A resposta da listagem já segue o contrato atual do frontend para `projectsApi.list()`.
+A resposta da listagem segue o contrato atual do frontend para `projectsApi.list()` quando houver até 10 projetos visíveis. Acima de 10 projetos, a resposta passa a usar paginação com `count`, `next`, `previous` e `results`.
+
+Regras consolidadas do bloco de projetos:
+
+* projetos não são apagados fisicamente; `DELETE /api/projects/<project_id>/` apenas desativa o projeto;
+* projetos desativados não aparecem na API de listagem nem nos detalhes;
+* a listagem retorna apenas projetos ativos e ordena por data de criação mais recente;
+* dois projetos ativos não podem ter o mesmo `nome + modo`;
+* `UAT` e `Cutover` com o mesmo nome são permitidos porque são projetos distintos;
+* somente `GESTOR` pode editar dados do projeto, equipe/memberships e nós de hierarquia;
+* `NoHierarquia` não pode ser removido depois de criado; a API permite criar e editar, mas não deletar;
+* convite de usuários continua recebendo os dados selecionados pelo frontend no Microsoft Graph;
+* dados temporários de desenvolvimento podem ser criados com `python manage.py seed_dev_projects` e ficam marcados com `[DEV SEED]`.
 
 ## Git
 
