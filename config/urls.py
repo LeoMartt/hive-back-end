@@ -17,11 +17,8 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 
-from apps.projects.views import ProjectCollectionView
-
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/accounts/", include("apps.accounts.urls")),
-    path("api/projects", ProjectCollectionView.as_view(), name="projects-list-no-slash"),
     path("api/projects/", include("apps.projects.urls")),
 ]

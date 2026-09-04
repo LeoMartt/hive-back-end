@@ -1,6 +1,7 @@
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.generics import ListAPIView
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -20,17 +21,24 @@ from .services import (
     atualizar_projeto,
     criar_membership,
     criar_projeto,
+    desativar_projeto,
     exigir_gestor,
     salvar_no_hierarquia,
-    usuario_pode_ver_projeto,
 )
+
+
+class ProjectPagination(PageNumberPagination):
+    page_size = 10
 
 
 class ProjectQuerysetMixin:
     def base_queryset(self):
-        return Project.objects.prefetch_related(
+        return Project.objects.filter(ativo=True).prefetch_related(
             "memberships__usuario",
             "memberships__papel",
+        ).order_by(
+            "-criado_em",
+            "nome",
         )
 
     def visible_queryset(self):
@@ -46,7 +54,14 @@ class ProjectQuerysetMixin:
 
 class ProjectCollectionView(ProjectQuerysetMixin, APIView):
     def get(self, request):
-        serializer = ProjectListSerializer(self.visible_queryset(), many=True)
+        queryset = self.visible_queryset()
+        if queryset.count() > ProjectPagination.page_size:
+            paginator = ProjectPagination()
+            page = paginator.paginate_queryset(queryset, request, view=self)
+            serializer = ProjectListSerializer(page, many=True)
+            return paginator.get_paginated_response(serializer.data)
+
+        serializer = ProjectListSerializer(queryset, many=True)
         return Response(serializer.data)
 
     def post(self, request):
@@ -76,6 +91,12 @@ class ProjectDetailView(ProjectQuerysetMixin, APIView):
         serializer.is_valid(raise_exception=True)
         project = atualizar_projeto(projeto=project, dados=serializer.validated_data)
         return Response(ProjectDetailSerializer(project).data)
+
+    def delete(self, request, project_id):
+        project = self.get_project(project_id)
+        exigir_gestor(request.user, project)
+        desativar_projeto(projeto=project)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class PapelListView(ListAPIView):
@@ -141,14 +162,6 @@ class NoHierarquiaDetailView(ProjectQuerysetMixin, APIView):
 
         no = salvar_no_hierarquia(no)
         return Response(NoHierarquiaSerializer(no).data)
-
-    def delete(self, request, project_id, node_id):
-        project = self.get_project(project_id)
-        exigir_gestor(request.user, project)
-        no = self.get_no(project, node_id)
-        no.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
 
 class MembershipCollectionView(ProjectQuerysetMixin, APIView):
     def get(self, request, project_id):

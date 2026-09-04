@@ -5,8 +5,8 @@ from .models import Membership, NoHierarquia, Papel, Project
 
 @admin.register(Project)
 class ProjectAdmin(admin.ModelAdmin):
-    list_display = ("nome", "modo", "criado_por", "atualizado_em")
-    list_filter = ("modo",)
+    list_display = ("nome", "modo", "ativo", "criado_por", "criado_em", "atualizado_em")
+    list_filter = ("modo", "ativo")
     search_fields = ("nome", "descricao")
     readonly_fields = ("criado_em", "atualizado_em")
 

@@ -17,12 +17,16 @@ ROLE_BY_LABEL = {
 
 
 def usuario_pode_ver_projeto(usuario: Usuario, projeto: Project) -> bool:
+    if not projeto.ativo:
+        return False
     if usuario.is_staff or usuario.is_superuser:
         return True
     return Membership.objects.filter(usuario=usuario, projeto=projeto).exists()
 
 
 def usuario_pode_gerenciar_projeto(usuario: Usuario, projeto: Project) -> bool:
+    if not projeto.ativo:
+        return False
     if usuario.is_staff or usuario.is_superuser:
         return True
     return Membership.objects.filter(
@@ -141,6 +145,8 @@ def criar_projeto(*, usuario: Usuario, dados: dict) -> Project:
     try:
         project.full_clean()
         project.save()
+    except IntegrityError as exc:
+        raise DRFValidationError({"name": "Já existe projeto ativo com este nome e modo."}) from exc
     except ValidationError as exc:
         raise DRFValidationError(exc.message_dict) from exc
 
@@ -185,8 +191,17 @@ def atualizar_projeto(*, projeto: Project, dados: dict) -> Project:
     try:
         projeto.full_clean()
         projeto.save()
+    except IntegrityError as exc:
+        raise DRFValidationError({"name": "Já existe projeto ativo com este nome e modo."}) from exc
     except ValidationError as exc:
         raise DRFValidationError(exc.message_dict) from exc
+    return projeto
+
+
+@transaction.atomic
+def desativar_projeto(*, projeto: Project) -> Project:
+    projeto.ativo = False
+    projeto.save(update_fields=["ativo", "atualizado_em"])
     return projeto
 
 

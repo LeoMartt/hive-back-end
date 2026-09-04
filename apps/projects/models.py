@@ -25,6 +25,7 @@ class Project(models.Model):
     anexo_max_mb = models.IntegerField(default=10)
     exigir_evidencia_atividade = models.BooleanField(default=True)
     exigir_evidencia_issue = models.BooleanField(default=True)
+    ativo = models.BooleanField(default=True)
     proximo_codigo_atividade = models.IntegerField(default=1)
     proximo_codigo_issue = models.IntegerField(default=1)
     criado_por = models.ForeignKey(
@@ -36,7 +37,7 @@ class Project(models.Model):
     atualizado_em = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["-atualizado_em", "nome"]
+        ordering = ["-criado_em", "nome"]
         constraints = [
             models.CheckConstraint(
                 condition=Q(modo="UAT") | Q(modo="CUTOVER"),
@@ -67,6 +68,11 @@ class Project(models.Model):
                 condition=Q(proximo_codigo_issue__gt=0),
                 name="project_proximo_codigo_issue_positivo",
             ),
+            models.UniqueConstraint(
+                fields=["nome", "modo"],
+                condition=Q(ativo=True),
+                name="project_nome_modo_ativo_unico",
+            ),
         ]
 
     def clean(self):
@@ -75,6 +81,12 @@ class Project(models.Model):
             raise ValidationError({"nivel2_nome": "Projetos UAT exigem o segundo nível."})
         if self.modo == self.Modo.CUTOVER and self.nivel2_nome:
             raise ValidationError({"nivel2_nome": "Projetos Cutover não usam segundo nível."})
+        if self.ativo and Project.objects.filter(
+            nome=self.nome,
+            modo=self.modo,
+            ativo=True,
+        ).exclude(id=self.id).exists():
+            raise ValidationError({"nome": "Já existe projeto ativo com este nome e modo."})
 
     @property
     def nomes_niveis_hierarquia(self) -> list[str]:
