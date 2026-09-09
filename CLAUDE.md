@@ -17,9 +17,11 @@ Primeiro app de domínio criado: **`apps/accounts`** — model `Usuario` (`AUTH_
 
 `apps/accounts` propositalmente **não guarda papel nem vínculo com projeto** — isso é `apps/projects::Membership`.
 
-**Branch atual:** `finish-projects-route`.
+**Branch atual:** `activities-routes`.
 
-`apps/projects` foi iniciado com `Project`, `NoHierarquia`, `Papel` e `Membership`. As rotas reais usam o padrão Django com barra final (`GET /api/projects/`). `Project.mode` é único e fixo na criação, exatamente como o front já implementa, e "UAT + Cutover coexistindo" significa dois `Project` sem vínculo entre si. Projeto não é apagado fisicamente: usa desativação lógica (`ativo=False`) e some da API/lista do frontend. A lista de projetos retorna apenas ativos, ordenados por `criado_em DESC`, e pagina com 10 itens apenas quando houver mais de 10 projetos visíveis. Nomes de projeto podem se repetir somente em modos diferentes; dois projetos ativos com mesmo `nome + modo` são bloqueados. **Não usar `HierarchyLevel`**; a hierarquia oficial do backend é `NoHierarquia` recursivo com `parent_id`. `NoHierarquia` não pode ser apagado depois de criado; pode ser editado por Gestor enquanto não houver regra futura bloqueando vínculos com `Activity`. **`CustomField` foi descartado em 2026-08-26** (decisão do usuário) — campos que antes seriam "customizáveis por projeto" agora são campos fixos direto no model do domínio dono (ver `Activity — campos fixos`, abaixo). `apps/activities` e `apps/issues` continuam bloqueados pelos pontos 1, 2, 4, 5 e 6.
+`apps/projects` foi iniciado com `Project`, `NoHierarquia`, `Papel` e `Membership`. As rotas reais usam o padrão Django com barra final (`GET /api/projects/`). `Project.mode` é único e fixo na criação, exatamente como o front já implementa, e "UAT + Cutover coexistindo" significa dois `Project` sem vínculo entre si. Projeto não é apagado fisicamente: usa desativação lógica (`ativo=False`) e some da API/lista do frontend. A lista de projetos retorna apenas ativos, ordenados por `criado_em DESC`, e pagina com 10 itens apenas quando houver mais de 10 projetos visíveis. Nomes de projeto podem se repetir somente em modos diferentes; dois projetos ativos com mesmo `nome + modo` são bloqueados. **Não usar `HierarchyLevel`**; a hierarquia oficial do backend é `NoHierarquia` recursivo com `parent_id`. `NoHierarquia` não pode ser apagado depois de criado; pode ser editado por Gestor enquanto não houver regra futura bloqueando vínculos com `Activity`. **`CustomField` foi descartado em 2026-08-26** (decisão do usuário) — campos que antes seriam "customizáveis por projeto" agora são campos fixos direto no model do domínio dono (ver `Activity — campos fixos`, abaixo).
+
+`apps/activities` foi iniciado com `Activity` e `ActivityPredecessor`, rotas aninhadas em projeto e serializer compatível com os campos amigáveis do front (`id` como `ATV-0001`, `module`, `process`, `tester`, `dev`). `Activity.id` é PK numérica sequencial global; `codigo_visivel` é derivado do próprio `id`, não é coluna editável e não reinicia por projeto. `NoHierarquia` não tem códigos visíveis `MOD-*`/`PRC-*`; módulo/processo vêm da relação `Activity.no_id -> NoHierarquia`. Em UAT, `Activity.no_id` aponta para nó nível 2; em Cutover, para nó nível 1. Status inicial: sem predecessores nasce `LIBERADO`; com predecessores nasce `AGUARDANDO`; quando todas as predecessoras forem concluídas, passa para `LIBERADO`. Predecessores ficam em tabela associativa; na importação CSV/Excel, os predecessores podem usar códigos temporários do arquivo, resolvidos para IDs reais durante a importação. Tester e Desenvolvedor são obrigatórios e precisam ter `Membership` no projeto com papel compatível (`TESTER` e `DEV`). Activity não é deletada; é cancelada e não volta. Upload/evidência fica para bloco posterior. `apps/issues` continua bloqueado por decisões próprias de Issue.
 
 ## Stack confirmada
 
@@ -37,7 +39,8 @@ Primeiro app de domínio criado: **`apps/accounts`** — model `Usuario` (`AUTH_
 hive-back-end/
 ├── apps/
 │   ├── accounts/            # identidade do usuário + autenticação Entra ID
-│   └── projects/            # Project, NoHierarquia, Papel, Membership
+│   ├── projects/            # Project, NoHierarquia, Papel, Membership
+│   └── activities/          # Activity, ActivityPredecessor
 ├── common/                  # recursos compartilhados por 2+ apps — ainda vazio, nenhum app usa hoje
 │   ├── exceptions/          # tratamento de exceções da API
 │   ├── pagination/          # paginação reutilizável
@@ -65,7 +68,7 @@ Domínios previstos em `apps/` (✅ = implementado, ⏳ = planejado):
 
 - **✅ `accounts/`** — identidade do usuário (perfil + vínculo Microsoft Entra ID) e autenticação DRF via token OIDC (`EntraIDAuthentication`, auto-provisiona no primeiro acesso). NÃO guarda papel nem vínculo com projeto.
 - **✅ `projects/`** — `Project` (`nome`, `modo` — UAT ou Cutover, único e fixo na criação; **duas frentes UAT+Cutover da mesma iniciativa são dois `Project` distintos, sem nenhum vínculo no banco, só podendo coincidir no nome**; `ativo` para desativação lógica, nunca delete físico), `NoHierarquia` recursivo com `parent_id` (cria/edita, mas não deleta), `Papel` lookup (`GESTOR`, `TESTER`, `DEV`) e `Membership` (usuário + projeto + papel: Gestor de Projetos / Tester / Desenvolvedor — um usuário pode ter múltiplos papéis, uma linha de `Membership` por papel). Projetos ativos não podem repetir `nome + modo`. Só `GESTOR` edita projeto, equipe e hierarquia; membros visualizam. **Sem `CustomField`** — descartado em 2026-08-26 (decisão do usuário); nenhum schema de campo customizável por projeto.
-- **⏳ `activities/`** — `Activity`. `services.py` = liberação por predecessores (E lógico — todos os predecessores precisam estar Concluído) e transições de status. `management/commands/` = importação em massa via Excel (template padrão, coluna temporária de predecessores resolvida na importação, IDs únicos imutáveis após importar).
+- **✅ `activities/`** — `Activity` e `ActivityPredecessor`. Model no mesmo padrão de `projects`, com campos em português. Diferente de `Project`/`Usuario`, `Activity.id` é numérico sequencial global e é usado na URL; `codigo_visivel` é calculado a partir dele (`ATV-0001`, mínimo 4 dígitos, crescendo naturalmente após `ATV-9999`). Não criar contador por projeto para atividades. `Activity.no_id` aponta para `NoHierarquia` folha conforme modo do projeto: UAT exige nível 2; Cutover exige nível 1. `services.py` = validações de hierarquia, membership Tester/Dev, predecessores e cancelamento. Status inicial: sem predecessores `LIBERADO`, com predecessores `AGUARDANDO`. Importação em massa via Excel/CSV ainda não implementada, mas a modelagem prevê coluna temporária de predecessores resolvida na importação. Activity não deleta, só cancela, e cancelada não volta.
 - **⏳ `issues/`** — `Issue` vinculada a `Activity`. `services.py` = transições de status e efeito sobre a Activity.
 - **⏳ `audit/`** — `AuditTrail` genérico (GenericForeignKey, status_anterior/novo, data_hora, usuário). Fonte da Curva S e do tempo médio de resolução.
 - **⏳ `dashboards/`** — sem `models.py`, só agrega `Activity`/`Issue`/`AuditTrail`: SPI, Curva S, cards, donuts, barras, ranking.
@@ -75,7 +78,15 @@ Nomenclatura de campos/models em **português**, alinhada ao vocabulário já fi
 ## Regras de negócio essenciais
 
 ### Activity — campos fixos
-ID (auto), Nome, Status (auto), Tester, Desenvolvedor, Data Início Planejada, Data Conclusão Planejada, Data Início Real (auto), Data Conclusão Real (auto), Predecessores (múltiplos IDs separados por `;`), Evidência de aprovação, Observação de aprovação, `numero_retest` (auto, incrementa a cada Bloqueado→Liberado).
+ID numérico sequencial global (PK), código visível calculado a partir do ID (`ATV-0001`, mínimo 4 dígitos, sem reiniciar por projeto), Projeto, Nó de hierarquia, Nome, Status (auto), Tester, Desenvolvedor, Data Início Planejada, Data Conclusão Planejada, Data Início Real (auto), Data Conclusão Real (auto), Predecessores (tabela associativa; na importação CSV/Excel pode vir como código temporário do arquivo), Evidência de aprovação, Observação de aprovação, `numero_retest` (auto, incrementa a cada Bloqueado→Liberado).
+
+`Activity.id` e o número do `codigo_visivel` representam a mesma sequência global. Ex.: `id=2` aparece como `ATV-0002`; `id=10000` aparece como `ATV-10000`. O código visível é estável e nunca muda. `NoHierarquia` não possui código visível de módulo/processo; a atividade fica amarrada a módulo/processo por `Activity.no_id`.
+
+Regra de ligação com a hierarquia:
+- Projeto UAT: `Activity.no_id` aponta para `NoHierarquia` nível 2 (filho de nível 1).
+- Projeto Cutover: `Activity.no_id` aponta para `NoHierarquia` nível 1.
+
+Tester e Desenvolvedor são obrigatórios e devem possuir `Membership` no projeto com papel compatível (`TESTER` e `DEV`).
 
 Campos fixos opcionais da `Activity`: Área, Sistema, Observações, Resultado Esperado, WBS e Transação.
 
@@ -87,6 +98,8 @@ Aguardando → Liberado → Em execução → Concluído
                                      → Bloqueado (issue impeditiva) → Liberado (reteste)
                                      → Cancelado (só Gestor)
 ```
+
+Atividade sem predecessores nasce `Liberado`. Atividade com predecessores nasce `Aguardando` e só muda para `Liberado` quando todas as predecessoras estiverem `Concluído`. Activity não é apagada fisicamente; é cancelada, permanece no histórico e não volta para outro status.
 
 ### Issue — campos fixos
 ID (auto), Título*, Tipo*, Impeditivo*, Desenvolvedor*, Descrição (opcional se não impeditiva), Anexo (opcional se não impeditiva), Status (auto), Categorização de Impacto, Solução Proposta, Atividade vinculada (auto).

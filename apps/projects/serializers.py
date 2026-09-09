@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from apps.activities.models import Activity
+
 from .models import Membership, NoHierarquia, Papel, Project
 from .services import resolver_codigo_papel
 
@@ -53,16 +55,19 @@ class ProjectListSerializer(serializers.ModelSerializer):
         return project.modo.lower()
 
     def get_activityCount(self, project: Project) -> int:
-        return 0
+        return project.activities.exclude(status=Activity.Status.CANCELADO).count()
 
     def get_completedCount(self, project: Project) -> int:
-        return 0
+        return project.activities.filter(status=Activity.Status.CONCLUIDO).count()
 
     def get_hierarchyLevels(self, project: Project) -> list[str]:
         return project.nomes_niveis_hierarquia
 
     def get_progressPercent(self, project: Project) -> int:
-        return 0
+        total = self.get_activityCount(project)
+        if total == 0:
+            return 0
+        return round((self.get_completedCount(project) / total) * 100)
 
     def get_spi(self, project: Project):
         return None

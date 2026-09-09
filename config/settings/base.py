@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "storages",
     "apps.accounts",
     "apps.projects",
+    "apps.activities",
 ]
 
 AUTH_USER_MODEL = "accounts.Usuario"
