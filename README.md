@@ -263,6 +263,45 @@ Regras consolidadas do bloco de projetos:
 * convite de usuários continua recebendo os dados selecionados pelo frontend no Microsoft Graph;
 * dados temporários de desenvolvimento podem ser criados com `python manage.py seed_dev_projects` e ficam marcados com `[DEV SEED]`.
 
+## Activities
+
+O app `apps/activities` contém o primeiro bloco do domínio de atividades:
+
+* `Activity`;
+* `ActivityPredecessor`.
+
+Rotas iniciais:
+
+```text
+GET /api/projects/<project_id>/activities/
+POST /api/projects/<project_id>/activities/
+GET /api/projects/<project_id>/activities/<activity_id>/
+PATCH /api/projects/<project_id>/activities/<activity_id>/
+POST /api/projects/<project_id>/activities/<activity_id>/cancel/
+```
+
+Regras consolidadas do bloco de atividades:
+
+* `Activity` segue o mesmo padrão de organização do app `projects`, com model, serializers, views, services e tests dentro do app;
+* os campos do model serão em português;
+* `Activity.id` será numérico sequencial global e usado como PK;
+* o código visível será calculado a partir do próprio `id`, no formato `ATV-0001`;
+* o código visível terá no mínimo 4 dígitos e crescerá naturalmente depois de `ATV-9999`, por exemplo `ATV-10000`;
+* o contador de atividades não reinicia por projeto;
+* `NoHierarquia` não terá códigos visíveis como `MOD-*` ou `PRC-*`;
+* a ligação da atividade com módulo/processo será feita por `Activity.no_id`;
+* em projetos UAT, a atividade deve apontar para um `NoHierarquia` de nível 2;
+* em projetos Cutover, a atividade deve apontar para um `NoHierarquia` de nível 1;
+* atividade sem predecessores nasce com status `LIBERADO`;
+* atividade com predecessores nasce com status `AGUARDANDO`;
+* quando todas as predecessoras forem concluídas, a atividade passa para `LIBERADO`;
+* predecessores serão persistidos em tabela associativa, não como texto separado por `;`;
+* na importação CSV/Excel, os predecessores podem usar códigos temporários do próprio arquivo, resolvidos para IDs reais durante a importação;
+* `tester` e `desenvolvedor` são obrigatórios e devem ter `Membership` no projeto com papel compatível;
+* atividade não será deletada fisicamente; será apenas cancelada;
+* atividade cancelada não volta para outro status;
+* upload/evidência será tratado em bloco posterior.
+
 ## Git
 
 O projeto utiliza duas branches permanentes:

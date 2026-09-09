@@ -34,7 +34,6 @@ class ProjectModelTests(TestCase):
         self.assertTrue(project.exigir_evidencia_atividade)
         self.assertTrue(project.exigir_evidencia_issue)
         self.assertTrue(project.ativo)
-        self.assertEqual(project.proximo_codigo_atividade, 1)
         self.assertEqual(project.proximo_codigo_issue, 1)
         self.assertEqual(project.nomes_niveis_hierarquia, ["Área", "Cenário"])
 

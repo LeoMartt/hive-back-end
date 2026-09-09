@@ -26,7 +26,6 @@ class Project(models.Model):
     exigir_evidencia_atividade = models.BooleanField(default=True)
     exigir_evidencia_issue = models.BooleanField(default=True)
     ativo = models.BooleanField(default=True)
-    proximo_codigo_atividade = models.IntegerField(default=1)
     proximo_codigo_issue = models.IntegerField(default=1)
     criado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -59,10 +58,6 @@ class Project(models.Model):
             models.CheckConstraint(
                 condition=Q(anexo_max_mb__gt=0),
                 name="project_anexo_max_mb_positivo",
-            ),
-            models.CheckConstraint(
-                condition=Q(proximo_codigo_atividade__gt=0),
-                name="project_proximo_codigo_atividade_positivo",
             ),
             models.CheckConstraint(
                 condition=Q(proximo_codigo_issue__gt=0),
