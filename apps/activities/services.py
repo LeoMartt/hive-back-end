@@ -1,5 +1,7 @@
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
+from django.db.models import Q
+from django.utils import timezone
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from apps.accounts.models import Usuario
@@ -39,6 +41,15 @@ def exigir_membership_com_papel(usuario: Usuario, projeto: Project, codigo_papel
         raise DRFValidationError({campo: f"Usuário deve possuir papel {codigo_papel} no projeto."})
 
 
+def resolver_usuario_por_identificador(identificador, campo: str) -> Usuario:
+    usuario = Usuario.objects.filter(
+        Q(id=identificador) | Q(entra_object_id=identificador),
+    ).first()
+    if not usuario:
+        raise DRFValidationError({campo: "Usuário não encontrado."})
+    return usuario
+
+
 def validar_no_para_activity(projeto: Project, no: NoHierarquia) -> None:
     if no.projeto_id != projeto.id:
         raise DRFValidationError({"nodeId": "Nó de hierarquia deve pertencer ao projeto."})
@@ -74,6 +85,15 @@ def status_liberado_por_predecessoras(predecessoras: list[Activity]) -> str:
     return Activity.Status.AGUARDANDO
 
 
+def liberar_dependentes(activity: Activity) -> None:
+    for dependente in activity.dependentes.filter(status=Activity.Status.AGUARDANDO).prefetch_related(
+        "predecessoras",
+    ):
+        if all(predecessora.status == Activity.Status.CONCLUIDO for predecessora in dependente.predecessoras.all()):
+            dependente.status = Activity.Status.LIBERADO
+            salvar_activity(dependente)
+
+
 def salvar_activity(activity: Activity) -> Activity:
     try:
         activity.full_clean()
@@ -92,14 +112,10 @@ def criar_activity(*, projeto: Project, dados: dict) -> Activity:
         raise DRFValidationError({"nodeId": "Nó de hierarquia não encontrado."})
     validar_no_para_activity(projeto, no)
 
-    tester = Usuario.objects.filter(id=dados["testerId"]).first()
-    if not tester:
-        raise DRFValidationError({"testerId": "Tester não encontrado."})
+    tester = resolver_usuario_por_identificador(dados["testerId"], "testerId")
     exigir_membership_com_papel(tester, projeto, Papel.Codigo.TESTER, "testerId")
 
-    desenvolvedor = Usuario.objects.filter(id=dados["developerId"]).first()
-    if not desenvolvedor:
-        raise DRFValidationError({"developerId": "Desenvolvedor não encontrado."})
+    desenvolvedor = resolver_usuario_por_identificador(dados["developerId"], "developerId")
     exigir_membership_com_papel(desenvolvedor, projeto, Papel.Codigo.DEV, "developerId")
 
     predecessoras = validar_predecessoras(projeto, dados.get("predecessorIds", []))
@@ -132,25 +148,19 @@ def criar_activity(*, projeto: Project, dados: dict) -> Activity:
 def atualizar_activity(*, activity: Activity, dados: dict) -> Activity:
     if activity.status == Activity.Status.CANCELADO:
         raise DRFValidationError({"status": "Atividade cancelada não pode ser alterada."})
+    if activity.status == Activity.Status.CONCLUIDO:
+        raise DRFValidationError({"status": "Atividade concluída não pode ser alterada."})
 
     if "nodeId" in dados:
-        no = NoHierarquia.objects.filter(id=dados["nodeId"], projeto=activity.projeto).first()
-        if not no:
-            raise DRFValidationError({"nodeId": "Nó de hierarquia não encontrado."})
-        validar_no_para_activity(activity.projeto, no)
-        activity.no = no
+        raise DRFValidationError({"nodeId": "Nó de hierarquia da atividade não pode ser alterado."})
 
     if "testerId" in dados:
-        tester = Usuario.objects.filter(id=dados["testerId"]).first()
-        if not tester:
-            raise DRFValidationError({"testerId": "Tester não encontrado."})
+        tester = resolver_usuario_por_identificador(dados["testerId"], "testerId")
         exigir_membership_com_papel(tester, activity.projeto, Papel.Codigo.TESTER, "testerId")
         activity.tester = tester
 
     if "developerId" in dados:
-        desenvolvedor = Usuario.objects.filter(id=dados["developerId"]).first()
-        if not desenvolvedor:
-            raise DRFValidationError({"developerId": "Desenvolvedor não encontrado."})
+        desenvolvedor = resolver_usuario_por_identificador(dados["developerId"], "developerId")
         exigir_membership_com_papel(desenvolvedor, activity.projeto, Papel.Codigo.DEV, "developerId")
         activity.desenvolvedor = desenvolvedor
 
@@ -173,15 +183,12 @@ def atualizar_activity(*, activity: Activity, dados: dict) -> Activity:
             setattr(activity, campo, valor or "")
 
     if "predecessorIds" in dados:
-        if activity.status not in [Activity.Status.AGUARDANDO, Activity.Status.LIBERADO]:
-            raise DRFValidationError(
-                {"predecessorIds": "Predecessoras só podem mudar antes do início da execução."}
-            )
         predecessor_ids = dados.get("predecessorIds") or []
         if activity.id in predecessor_ids:
             raise DRFValidationError({"predecessorIds": "Atividade não pode depender dela mesma."})
         predecessoras = validar_predecessoras(activity.projeto, predecessor_ids)
-        activity.status = status_liberado_por_predecessoras(predecessoras)
+        if activity.status in [Activity.Status.AGUARDANDO, Activity.Status.LIBERADO]:
+            activity.status = status_liberado_por_predecessoras(predecessoras)
         activity.predecessor_edges.all().delete()
         for predecessora in predecessoras:
             ActivityPredecessor.objects.create(atividade=activity, predecessora=predecessora)
@@ -196,4 +203,29 @@ def cancelar_activity(*, activity: Activity) -> Activity:
     if activity.status == Activity.Status.CONCLUIDO:
         raise DRFValidationError({"status": "Atividade concluída não pode ser cancelada."})
     activity.status = Activity.Status.CANCELADO
+    return salvar_activity(activity)
+
+
+@transaction.atomic
+def concluir_activity(*, activity: Activity, observacao_aprovacao: str = "") -> Activity:
+    if activity.status != Activity.Status.LIBERADO:
+        raise DRFValidationError({"status": "Somente atividade liberada pode ser concluída."})
+    activity.status = Activity.Status.CONCLUIDO
+    if not activity.data_inicio_real:
+        activity.data_inicio_real = timezone.localdate()
+    activity.data_conclusao_real = timezone.localdate()
+    activity.observacao_aprovacao = observacao_aprovacao.strip()
+    activity = salvar_activity(activity)
+    liberar_dependentes(activity)
+    return activity
+
+
+@transaction.atomic
+def bloquear_activity(*, activity: Activity, motivo: str = "") -> Activity:
+    if activity.status != Activity.Status.LIBERADO:
+        raise DRFValidationError({"status": "Somente atividade liberada pode ser bloqueada."})
+    activity.status = Activity.Status.BLOQUEADO
+    activity.numero_retest += 1
+    if motivo:
+        activity.observacoes = motivo.strip()
     return salvar_activity(activity)

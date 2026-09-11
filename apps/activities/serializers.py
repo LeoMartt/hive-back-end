@@ -7,7 +7,6 @@ from .services import formatar_codigo_activity, resolver_activity_por_codigo
 STATUS_API = {
     Activity.Status.AGUARDANDO: "aguardando",
     Activity.Status.LIBERADO: "liberado",
-    Activity.Status.EM_EXECUCAO: "execucao",
     Activity.Status.BLOQUEADO: "bloqueado",
     Activity.Status.CONCLUIDO: "concluido",
     Activity.Status.CANCELADO: "cancelado",
@@ -24,9 +23,9 @@ class ActivitySerializer(serializers.ModelSerializer):
     module = serializers.SerializerMethodField()
     process = serializers.SerializerMethodField()
     tester = serializers.SerializerMethodField()
-    testerId = serializers.UUIDField(source="tester_id", read_only=True)
+    testerId = serializers.SerializerMethodField()
     dev = serializers.SerializerMethodField()
-    developerId = serializers.UUIDField(source="desenvolvedor_id", read_only=True)
+    developerId = serializers.SerializerMethodField()
     plannedStart = serializers.DateField(source="data_inicio_planejada", read_only=True)
     plannedEnd = serializers.DateField(source="data_conclusao_planejada", read_only=True)
     actualStart = serializers.DateField(source="data_inicio_real", read_only=True)
@@ -104,8 +103,14 @@ class ActivitySerializer(serializers.ModelSerializer):
     def get_tester(self, activity: Activity) -> str:
         return activity.tester.first_name or activity.tester.username
 
+    def get_testerId(self, activity: Activity) -> str:
+        return str(activity.tester.entra_object_id or activity.tester_id)
+
     def get_dev(self, activity: Activity) -> str:
         return activity.desenvolvedor.first_name or activity.desenvolvedor.username
+
+    def get_developerId(self, activity: Activity) -> str:
+        return str(activity.desenvolvedor.entra_object_id or activity.desenvolvedor_id)
 
     def get_predecessors(self, activity: Activity) -> list[str]:
         return [predecessora.codigo_visivel for predecessora in activity.predecessoras.all()]
@@ -186,3 +191,11 @@ class ActivityCreateSerializer(ActivityWriteSerializer):
     developerId = serializers.UUIDField()
     plannedStart = serializers.DateField()
     plannedEnd = serializers.DateField()
+
+
+class ActivityCompleteSerializer(serializers.Serializer):
+    approvalNote = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+
+class ActivityBlockSerializer(serializers.Serializer):
+    reason = serializers.CharField(required=False, allow_blank=True)

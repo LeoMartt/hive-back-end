@@ -10,7 +10,6 @@ class Activity(models.Model):
     class Status(models.TextChoices):
         AGUARDANDO = "AGUARDANDO", "Aguardando"
         LIBERADO = "LIBERADO", "Liberado"
-        EM_EXECUCAO = "EM_EXECUCAO", "Em execução"
         BLOQUEADO = "BLOQUEADO", "Bloqueado"
         CONCLUIDO = "CONCLUIDO", "Concluído"
         CANCELADO = "CANCELADO", "Cancelado"
