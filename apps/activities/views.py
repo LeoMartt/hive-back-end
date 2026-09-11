@@ -1,14 +1,39 @@
 from django.shortcuts import get_object_or_404
 from rest_framework import status
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.projects.models import Project
-from apps.projects.services import exigir_gestor
+from apps.projects.services import exigir_gestor, usuario_pode_gerenciar_projeto
 
 from .models import Activity
-from .serializers import ActivityCreateSerializer, ActivitySerializer, ActivityWriteSerializer
-from .services import atualizar_activity, cancelar_activity, criar_activity
+from .serializers import (
+    ActivityBlockSerializer,
+    ActivityCompleteSerializer,
+    ActivityCreateSerializer,
+    ActivitySerializer,
+    ActivityWriteSerializer,
+)
+from .services import (
+    atualizar_activity,
+    bloquear_activity,
+    cancelar_activity,
+    concluir_activity,
+    criar_activity,
+)
+
+
+def usuario_pode_testar_activity(user, activity):
+    return activity.tester_id == user.id
+
+
+def exigir_gestor_ou_tester_da_activity(user, activity) -> None:
+    if usuario_pode_gerenciar_projeto(user, activity.projeto):
+        return
+    if usuario_pode_testar_activity(user, activity):
+        return
+    raise PermissionDenied("Apenas gestores ou o tester da atividade podem executar esta ação.")
 
 
 class ActivityQuerysetMixin:
@@ -79,4 +104,32 @@ class ActivityCancelView(ActivityQuerysetMixin, APIView):
         exigir_gestor(request.user, project)
         activity = self.get_activity(project, activity_id)
         activity = cancelar_activity(activity=activity)
+        return Response(ActivitySerializer(activity).data)
+
+
+class ActivityCompleteView(ActivityQuerysetMixin, APIView):
+    def post(self, request, project_id, activity_id):
+        project = self.visible_project(project_id)
+        activity = self.get_activity(project, activity_id)
+        exigir_gestor_ou_tester_da_activity(request.user, activity)
+        serializer = ActivityCompleteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        activity = concluir_activity(
+            activity=activity,
+            observacao_aprovacao=serializer.validated_data.get("approvalNote") or "",
+        )
+        return Response(ActivitySerializer(activity).data)
+
+
+class ActivityBlockView(ActivityQuerysetMixin, APIView):
+    def post(self, request, project_id, activity_id):
+        project = self.visible_project(project_id)
+        activity = self.get_activity(project, activity_id)
+        exigir_gestor_ou_tester_da_activity(request.user, activity)
+        serializer = ActivityBlockSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        activity = bloquear_activity(
+            activity=activity,
+            motivo=serializer.validated_data.get("reason") or "",
+        )
         return Response(ActivitySerializer(activity).data)

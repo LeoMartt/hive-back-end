@@ -1,0 +1,192 @@
+Status da rota de atividades e do test_hive_db
+==============================================
+
+Atualizado em: 2026-09-11
+
+Observacao de branch
+--------------------
+
+No momento desta atualizacao, o comando:
+
+git branch --show-current
+
+retornou:
+
+dev
+
+Ou seja, este TXT foi refeito enquanto o backend estava na branch dev.
+
+
+Status do test_hive_db
+----------------------
+
+Resolvido.
+
+Comandos rodados:
+
+.\.venv\Scripts\python.exe manage.py test apps.activities --keepdb
+
+Resultado:
+
+- 21 tests
+- OK
+- usando existing test database
+- preservando test database
+
+Depois foi rodada a suite completa:
+
+.\.venv\Scripts\python.exe manage.py test --keepdb
+
+Resultado:
+
+- 68 tests
+- OK
+- usando existing test database
+- preservando test database
+
+Conclusao: a pendencia do test_hive_db esta limpa.
+
+
+O que ja existe em activities
+-----------------------------
+
+O bloco de activities ja tem:
+
+- app apps.activities;
+- models Activity e ActivityPredecessor;
+- Activity.id numerico sequencial global como PK;
+- codigo visivel calculado a partir do id: ATV-0001, ATV-0002, ATV-9999,
+  ATV-10000;
+- listagem real por projeto;
+- criacao real via POST;
+- cancelamento logico;
+- transicoes basicas complete, block e cancel;
+- permissao final das transicoes:
+  - Gestor pode concluir, bloquear/reprovar, cancelar e editar;
+  - Tester da propria atividade pode concluir e bloquear/reprovar;
+  - Dev nao bloqueia/reprova Activity, apenas atua na Issue;
+  - editar e cancelar continuam somente Gestor;
+- regra final de PATCH/edicao:
+  - nao pode trocar o NoHierarquia/no da atividade depois da criacao;
+  - nao pode editar atividade CONCLUIDO ou CANCELADO;
+  - para todo o resto, o Gestor pode editar;
+- status validos: AGUARDANDO, LIBERADO, CONCLUIDO, BLOQUEADO e CANCELADO;
+- nao existe status EM_EXECUCAO nem transicao automatica ao abrir a tela;
+- liberacao automatica de dependentes quando todas as predecessoras ficam
+  concluidas;
+- predecessores em tabela associativa;
+- validacao de NoHierarquia por modo do projeto:
+  - UAT aponta para NoHierarquia nivel 2;
+  - CUTOVER aponta para NoHierarquia nivel 1;
+- validacao de tester/dev por Membership no projeto;
+- front lendo activities reais quando VITE_USE_MOCKS=false;
+- modal "Nova atividade" usando hierarquia real e IDs reais de tester/dev.
+
+
+O que ainda falta decidir ou finalizar em activities
+----------------------------------------------------
+
+1. QA manual no navegador
+
+   Testar pelo front, com VITE_USE_MOCKS=false:
+
+   - abrir lista de atividades de um projeto;
+   - criar uma atividade pelo modal;
+   - criar atividade com predecessora;
+   - concluir predecessora e confirmar se dependente sai de AGUARDANDO para
+     LIBERADO;
+   - cancelar atividade;
+   - bloquear/rejeitar atividade;
+   - abrir detalhe direto pela URL.
+
+
+2. Issues vinculadas a atividade
+
+   O front ainda tem Issues mockadas.
+
+   Hoje "bloquear/rejeitar" pode mudar o status da Activity no backend, mas a
+   criacao de Issue real vinculada ainda depende do proximo app: apps/issues.
+
+
+3. Evidencia/upload
+
+   Ficou combinado que upload/evidencia sera feito depois.
+
+   Quando voltar nesse ponto, precisa decidir:
+
+   - evidencia e obrigatoria para concluir?
+   - onde armazenar arquivo: Azure Blob?
+   - quais metadados guardar no banco?
+   - o backend deve recusar conclusao sem evidencia?
+
+
+4. Importacao/exportacao de atividades
+
+   Ficou fora deste fechamento.
+
+   Quando implementar CSV/Excel, manter a regra combinada:
+
+   - Activity.id continua sendo global e sequencial;
+   - codigo_visivel sempre deriva do id real;
+   - o arquivo pode ter um codigo temporario interno, por exemplo 1, 2, 3;
+   - durante a importacao, o backend mapeia codigo temporario -> Activity.id
+     real;
+   - predecessores do arquivo devem ser resolvidos a partir desse mapa.
+
+
+Referencia: como corrigir o test_hive_db se o erro voltar
+---------------------------------------------------------
+
+Erro antigo:
+
+permission denied for schema public
+
+Diagnostico que tinha sido visto:
+
+- current_user = hive_user
+- current_database = test_hive_db
+- owner do schema public = azure_pg_admin
+- hive_user tinha USAGE no schema public
+- hive_user nao tinha CREATE no schema public
+
+Correcao recomendada, conectando no banco test_hive_db como usuario admin do
+Azure PostgreSQL:
+
+GRANT ALL PRIVILEGES ON DATABASE test_hive_db TO hive_user;
+ALTER SCHEMA public OWNER TO hive_user;
+GRANT USAGE, CREATE ON SCHEMA public TO hive_user;
+
+Opcional para objetos futuros:
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO hive_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO hive_user;
+
+Conferencia:
+
+SELECT
+    current_database(),
+    pg_get_userbyid(n.nspowner) AS schema_owner,
+    has_schema_privilege('hive_user', 'public', 'USAGE') AS hive_user_has_usage,
+    has_schema_privilege('hive_user', 'public', 'CREATE') AS hive_user_has_create
+FROM pg_namespace n
+WHERE n.nspname = 'public';
+
+Esperado:
+
+- schema_owner = hive_user
+- hive_user_has_usage = true
+- hive_user_has_create = true
+
+Depois disso, rodar:
+
+.\.venv\Scripts\python.exe manage.py test apps.activities --keepdb
+.\.venv\Scripts\python.exe manage.py test --keepdb
+
+
+Observacao sobre --keepdb
+-------------------------
+
+Usar --keepdb evita destruir e recriar o banco de teste.
+
+Se os testes forem rodados sem --keepdb e o Django recriar test_hive_db, pode
+ser necessario repetir a correcao de owner/permissao do schema public.

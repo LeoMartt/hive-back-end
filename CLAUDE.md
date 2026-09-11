@@ -21,7 +21,7 @@ Primeiro app de domínio criado: **`apps/accounts`** — model `Usuario` (`AUTH_
 
 `apps/projects` foi iniciado com `Project`, `NoHierarquia`, `Papel` e `Membership`. As rotas reais usam o padrão Django com barra final (`GET /api/projects/`). `Project.mode` é único e fixo na criação, exatamente como o front já implementa, e "UAT + Cutover coexistindo" significa dois `Project` sem vínculo entre si. Projeto não é apagado fisicamente: usa desativação lógica (`ativo=False`) e some da API/lista do frontend. A lista de projetos retorna apenas ativos, ordenados por `criado_em DESC`, e pagina com 10 itens apenas quando houver mais de 10 projetos visíveis. Nomes de projeto podem se repetir somente em modos diferentes; dois projetos ativos com mesmo `nome + modo` são bloqueados. **Não usar `HierarchyLevel`**; a hierarquia oficial do backend é `NoHierarquia` recursivo com `parent_id`. `NoHierarquia` não pode ser apagado depois de criado; pode ser editado por Gestor enquanto não houver regra futura bloqueando vínculos com `Activity`. **`CustomField` foi descartado em 2026-08-26** (decisão do usuário) — campos que antes seriam "customizáveis por projeto" agora são campos fixos direto no model do domínio dono (ver `Activity — campos fixos`, abaixo).
 
-`apps/activities` foi iniciado com `Activity` e `ActivityPredecessor`, rotas aninhadas em projeto e serializer compatível com os campos amigáveis do front (`id` como `ATV-0001`, `module`, `process`, `tester`, `dev`). `Activity.id` é PK numérica sequencial global; `codigo_visivel` é derivado do próprio `id`, não é coluna editável e não reinicia por projeto. `NoHierarquia` não tem códigos visíveis `MOD-*`/`PRC-*`; módulo/processo vêm da relação `Activity.no_id -> NoHierarquia`. Em UAT, `Activity.no_id` aponta para nó nível 2; em Cutover, para nó nível 1. Status inicial: sem predecessores nasce `LIBERADO`; com predecessores nasce `AGUARDANDO`; quando todas as predecessoras forem concluídas, passa para `LIBERADO`. Predecessores ficam em tabela associativa; na importação CSV/Excel, os predecessores podem usar códigos temporários do arquivo, resolvidos para IDs reais durante a importação. Tester e Desenvolvedor são obrigatórios e precisam ter `Membership` no projeto com papel compatível (`TESTER` e `DEV`). Activity não é deletada; é cancelada e não volta. Upload/evidência fica para bloco posterior. `apps/issues` continua bloqueado por decisões próprias de Issue.
+`apps/activities` foi iniciado com `Activity` e `ActivityPredecessor`, rotas aninhadas em projeto e serializer compatível com os campos amigáveis do front (`id` como `ATV-0001`, `module`, `process`, `tester`, `dev`). `Activity.id` é PK numérica sequencial global; `codigo_visivel` é derivado do próprio `id`, não é coluna editável e não reinicia por projeto. `NoHierarquia` não tem códigos visíveis `MOD-*`/`PRC-*`; módulo/processo vêm da relação `Activity.no_id -> NoHierarquia`. Em UAT, `Activity.no_id` aponta para nó nível 2; em Cutover, para nó nível 1. Status inicial: sem predecessores nasce `LIBERADO`; com predecessores nasce `AGUARDANDO`; quando todas as predecessoras forem concluídas, passa para `LIBERADO`. Ao concluir uma predecessora, dependentes que ficarem com todas as predecessoras concluídas são liberadas automaticamente. Status válidos: `AGUARDANDO`, `LIBERADO`, `CONCLUIDO`, `BLOQUEADO` e `CANCELADO`; não existe mais status `EM_EXECUCAO` nem transição automática ao abrir a tela. Predecessores ficam em tabela associativa; na importação CSV/Excel, os predecessores podem usar códigos temporários do arquivo, resolvidos para IDs reais durante a importação. Tester e Desenvolvedor são obrigatórios e precisam ter `Membership` no projeto com papel compatível (`TESTER` e `DEV`). Activity não é deletada; é cancelada e não volta. Permissões fechadas: `PATCH`/edição e `cancel` são somente `GESTOR`; `complete` e `block`/reprovar podem ser feitos pelo `GESTOR` ou pelo `TESTER` da própria atividade; `DEV` não bloqueia/reprova Activity, atua na Issue. Regra de edição: não pode trocar `NoHierarquia` depois da criação; não pode editar Activity `CONCLUIDO` ou `CANCELADO`; para todo o resto, o `GESTOR` pode editar. Upload/evidência fica para bloco posterior. `apps/issues` continua bloqueado por decisões próprias de Issue.
 
 ## Stack confirmada
 
@@ -68,7 +68,7 @@ Domínios previstos em `apps/` (✅ = implementado, ⏳ = planejado):
 
 - **✅ `accounts/`** — identidade do usuário (perfil + vínculo Microsoft Entra ID) e autenticação DRF via token OIDC (`EntraIDAuthentication`, auto-provisiona no primeiro acesso). NÃO guarda papel nem vínculo com projeto.
 - **✅ `projects/`** — `Project` (`nome`, `modo` — UAT ou Cutover, único e fixo na criação; **duas frentes UAT+Cutover da mesma iniciativa são dois `Project` distintos, sem nenhum vínculo no banco, só podendo coincidir no nome**; `ativo` para desativação lógica, nunca delete físico), `NoHierarquia` recursivo com `parent_id` (cria/edita, mas não deleta), `Papel` lookup (`GESTOR`, `TESTER`, `DEV`) e `Membership` (usuário + projeto + papel: Gestor de Projetos / Tester / Desenvolvedor — um usuário pode ter múltiplos papéis, uma linha de `Membership` por papel). Projetos ativos não podem repetir `nome + modo`. Só `GESTOR` edita projeto, equipe e hierarquia; membros visualizam. **Sem `CustomField`** — descartado em 2026-08-26 (decisão do usuário); nenhum schema de campo customizável por projeto.
-- **✅ `activities/`** — `Activity` e `ActivityPredecessor`. Model no mesmo padrão de `projects`, com campos em português. Diferente de `Project`/`Usuario`, `Activity.id` é numérico sequencial global e é usado na URL; `codigo_visivel` é calculado a partir dele (`ATV-0001`, mínimo 4 dígitos, crescendo naturalmente após `ATV-9999`). Não criar contador por projeto para atividades. `Activity.no_id` aponta para `NoHierarquia` folha conforme modo do projeto: UAT exige nível 2; Cutover exige nível 1. `services.py` = validações de hierarquia, membership Tester/Dev, predecessores e cancelamento. Status inicial: sem predecessores `LIBERADO`, com predecessores `AGUARDANDO`. Importação em massa via Excel/CSV ainda não implementada, mas a modelagem prevê coluna temporária de predecessores resolvida na importação. Activity não deleta, só cancela, e cancelada não volta.
+- **✅ `activities/`** — `Activity` e `ActivityPredecessor`. Model no mesmo padrão de `projects`, com campos em português. Diferente de `Project`/`Usuario`, `Activity.id` é numérico sequencial global e é usado na URL; `codigo_visivel` é calculado a partir dele (`ATV-0001`, mínimo 4 dígitos, crescendo naturalmente após `ATV-9999`). Não criar contador por projeto para atividades. `Activity.no_id` aponta para `NoHierarquia` folha conforme modo do projeto: UAT exige nível 2; Cutover exige nível 1. `services.py` = validações de hierarquia, membership Tester/Dev, predecessores, transições básicas (`complete`, `block`, `cancel`) e liberação automática de dependentes. Status inicial: sem predecessores `LIBERADO`, com predecessores `AGUARDANDO`. Status válidos: `AGUARDANDO`, `LIBERADO`, `CONCLUIDO`, `BLOQUEADO` e `CANCELADO`. Permissões: Gestor faz tudo; Tester da própria atividade pode concluir e bloquear/reprovar; Dev não bloqueia/reprova Activity. Edição por Gestor não permite trocar `NoHierarquia` nem editar Activity `CONCLUIDO`/`CANCELADO`; demais campos podem ser editados nos outros status. Importação em massa via Excel/CSV ainda não implementada, mas a modelagem prevê coluna temporária de predecessores resolvida na importação. Activity não deleta, só cancela, e cancelada não volta.
 - **⏳ `issues/`** — `Issue` vinculada a `Activity`. `services.py` = transições de status e efeito sobre a Activity.
 - **⏳ `audit/`** — `AuditTrail` genérico (GenericForeignKey, status_anterior/novo, data_hora, usuário). Fonte da Curva S e do tempo médio de resolução.
 - **⏳ `dashboards/`** — sem `models.py`, só agrega `Activity`/`Issue`/`AuditTrail`: SPI, Curva S, cards, donuts, barras, ranking.
@@ -94,12 +94,14 @@ O HIVE não possui sistema de Custom Fields. Não criar `CustomField`, `CustomFi
 
 ### Status da Activity
 ```
-Aguardando → Liberado → Em execução → Concluído
-                                     → Bloqueado (issue impeditiva) → Liberado (reteste)
-                                     → Cancelado (só Gestor)
+Aguardando → Liberado → Concluído
+                       → Bloqueado (issue impeditiva) → Liberado (reteste)
+                       → Cancelado (só Gestor)
 ```
 
 Atividade sem predecessores nasce `Liberado`. Atividade com predecessores nasce `Aguardando` e só muda para `Liberado` quando todas as predecessoras estiverem `Concluído`. Activity não é apagada fisicamente; é cancelada, permanece no histórico e não volta para outro status.
+
+Permissões de Activity: Gestor pode concluir, bloquear/reprovar, cancelar e editar. Tester da própria atividade pode concluir e bloquear/reprovar. Desenvolvedor não bloqueia/reprova Activity; atua nas Issues. Editar (`PATCH`) e cancelar continuam somente Gestor. Na edição, o Gestor não pode trocar o nó de hierarquia e não pode editar Activity `Concluído` ou `Cancelado`; para todo o resto, a edição é permitida.
 
 ### Issue — campos fixos
 ID (auto), Título*, Tipo*, Impeditivo*, Desenvolvedor*, Descrição (opcional se não impeditiva), Anexo (opcional se não impeditiva), Status (auto), Categorização de Impacto, Solução Proposta, Atividade vinculada (auto).
@@ -115,7 +117,7 @@ Cancelada (auto quando atividade é cancelada)
 
 ### Regras críticas de negócio
 - Issue impeditiva → Activity vai para Bloqueada, exige reteste.
-- Issue não impeditiva → Activity continua Em execução, sem reteste.
+- Issue não impeditiva → Activity permanece no status atual, sem reteste.
 - **Issue não impeditiva não existe no modo Cutover** — no Cutover, toda issue é impeditiva.
 - Activity só sai de Bloqueado quando TODAS as issues impeditivas vinculadas estiverem em Solução proposta.
 - Issues em Solução proposta são concluídas automaticamente quando a Activity é concluída.
@@ -123,7 +125,7 @@ Cancelada (auto quando atividade é cancelada)
 - Reteste reprovado: issue volta para Aberta, observação obrigatória.
 
 ### SPI (RN41–RN44)
-Variante "0/50/100" do Fixed Formula Method (PMI, 2011): Aguardando=0%, Liberado=0%, Em execução=50%, Bloqueado=0%, Concluído=100%, Cancelado=excluído do cálculo.
+Variante "0/100" do Fixed Formula Method (PMI, 2011): Aguardando=0%, Liberado=0%, Bloqueado=0%, Concluído=100%, Cancelado=excluído do cálculo.
 
 ```
 SPI = Σ(% das atividades ativas) / (qtd atividades não canceladas

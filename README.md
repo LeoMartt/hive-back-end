@@ -277,6 +277,8 @@ GET /api/projects/<project_id>/activities/
 POST /api/projects/<project_id>/activities/
 GET /api/projects/<project_id>/activities/<activity_id>/
 PATCH /api/projects/<project_id>/activities/<activity_id>/
+POST /api/projects/<project_id>/activities/<activity_id>/complete/
+POST /api/projects/<project_id>/activities/<activity_id>/block/
 POST /api/projects/<project_id>/activities/<activity_id>/cancel/
 ```
 
@@ -295,11 +297,21 @@ Regras consolidadas do bloco de atividades:
 * atividade sem predecessores nasce com status `LIBERADO`;
 * atividade com predecessores nasce com status `AGUARDANDO`;
 * quando todas as predecessoras forem concluídas, a atividade passa para `LIBERADO`;
+* a conclusão de uma atividade libera automaticamente dependentes que estavam `AGUARDANDO` e ficaram com todas as predecessoras `CONCLUIDO`;
 * predecessores serão persistidos em tabela associativa, não como texto separado por `;`;
 * na importação CSV/Excel, os predecessores podem usar códigos temporários do próprio arquivo, resolvidos para IDs reais durante a importação;
 * `tester` e `desenvolvedor` são obrigatórios e devem ter `Membership` no projeto com papel compatível;
 * atividade não será deletada fisicamente; será apenas cancelada;
 * atividade cancelada não volta para outro status;
+* permissões de atividades:
+  * `PATCH`/edição e `cancel` são somente `GESTOR`;
+  * `complete` e `block`/reprovar podem ser feitos pelo `GESTOR` ou pelo `TESTER` da própria atividade;
+  * `DEV` não bloqueia/reprova atividade; `DEV` atua na issue;
+* regra de edição:
+  * não é permitido trocar o `NoHierarquia`/nó da atividade depois da criação;
+  * não é permitido editar atividade `CONCLUIDO` ou `CANCELADO`;
+  * nos demais status, o `GESTOR` pode editar os outros campos da atividade;
+* os status válidos de atividade são `AGUARDANDO`, `LIBERADO`, `CONCLUIDO`, `BLOQUEADO` e `CANCELADO`;
 * upload/evidência será tratado em bloco posterior.
 
 ## Git

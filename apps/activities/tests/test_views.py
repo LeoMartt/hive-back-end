@@ -225,6 +225,81 @@ class ActivityViewTests(APITestCase):
         self.assertEqual(activity.nome, "Validar NF-e atualizada")
         self.assertEqual(activity.area, "Fiscal")
 
+    def test_gestor_nao_troca_no_da_activity(self):
+        outro_processo = NoHierarquia.objects.create(
+            projeto=self.project,
+            parent=self.raiz,
+            nivel=NoHierarquia.Nivel.NIVEL_2,
+            nome="Recebimento",
+        )
+        activity = Activity.objects.create(
+            projeto=self.project,
+            no=self.processo,
+            nome="Validar NF-e",
+            tester=self.tester,
+            desenvolvedor=self.dev,
+            data_inicio_planejada=date(2026, 9, 1),
+            data_conclusao_planejada=date(2026, 9, 2),
+        )
+        self.client.force_authenticate(user=self.gestor)
+
+        response = self.client.patch(
+            reverse("activities:detail", kwargs={"project_id": self.project.id, "activity_id": activity.id}),
+            {"nodeId": str(outro_processo.id)},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        activity.refresh_from_db()
+        self.assertEqual(activity.no_id, self.processo.id)
+
+    def test_activity_concluida_nao_e_atualizada(self):
+        activity = Activity.objects.create(
+            projeto=self.project,
+            no=self.processo,
+            nome="Validar NF-e",
+            tester=self.tester,
+            desenvolvedor=self.dev,
+            data_inicio_planejada=date(2026, 9, 1),
+            data_conclusao_planejada=date(2026, 9, 2),
+            status=Activity.Status.CONCLUIDO,
+        )
+        self.client.force_authenticate(user=self.gestor)
+
+        response = self.client.patch(
+            reverse("activities:detail", kwargs={"project_id": self.project.id, "activity_id": activity.id}),
+            {"name": "Não deve mudar"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        activity.refresh_from_db()
+        self.assertEqual(activity.nome, "Validar NF-e")
+
+    def test_gestor_atualiza_activity_bloqueada(self):
+        activity = Activity.objects.create(
+            projeto=self.project,
+            no=self.processo,
+            nome="Validar NF-e",
+            tester=self.tester,
+            desenvolvedor=self.dev,
+            data_inicio_planejada=date(2026, 9, 1),
+            data_conclusao_planejada=date(2026, 9, 2),
+            status=Activity.Status.BLOQUEADO,
+        )
+        self.client.force_authenticate(user=self.gestor)
+
+        response = self.client.patch(
+            reverse("activities:detail", kwargs={"project_id": self.project.id, "activity_id": activity.id}),
+            {"notes": "Aguardando ajuste do desenvolvedor."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        activity.refresh_from_db()
+        self.assertEqual(activity.status, Activity.Status.BLOQUEADO)
+        self.assertEqual(activity.observacoes, "Aguardando ajuste do desenvolvedor.")
+
     def test_nao_gestor_nao_atualiza_activity(self):
         activity = Activity.objects.create(
             projeto=self.project,
@@ -265,6 +340,78 @@ class ActivityViewTests(APITestCase):
         activity.refresh_from_db()
         self.assertEqual(activity.status, Activity.Status.CANCELADO)
         self.assertEqual(response.data["status"], "cancelado")
+
+    def test_tester_conclui_activity_propria(self):
+        activity = Activity.objects.create(
+            projeto=self.project,
+            no=self.processo,
+            nome="Validar NF-e",
+            tester=self.tester,
+            desenvolvedor=self.dev,
+            data_inicio_planejada=date(2026, 9, 1),
+            data_conclusao_planejada=date(2026, 9, 2),
+            status=Activity.Status.LIBERADO,
+        )
+        self.client.force_authenticate(user=self.tester)
+
+        response = self.client.post(
+            reverse("activities:complete", kwargs={"project_id": self.project.id, "activity_id": activity.id}),
+            {"approvalNote": "Cenário validado."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        activity.refresh_from_db()
+        self.assertEqual(activity.status, Activity.Status.CONCLUIDO)
+        self.assertEqual(response.data["status"], "concluido")
+        self.assertEqual(activity.observacao_aprovacao, "Cenário validado.")
+
+    def test_tester_bloqueia_activity_propria(self):
+        activity = Activity.objects.create(
+            projeto=self.project,
+            no=self.processo,
+            nome="Validar NF-e",
+            tester=self.tester,
+            desenvolvedor=self.dev,
+            data_inicio_planejada=date(2026, 9, 1),
+            data_conclusao_planejada=date(2026, 9, 2),
+            status=Activity.Status.LIBERADO,
+        )
+        self.client.force_authenticate(user=self.tester)
+
+        response = self.client.post(
+            reverse("activities:block", kwargs={"project_id": self.project.id, "activity_id": activity.id}),
+            {"reason": "Divergência encontrada."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        activity.refresh_from_db()
+        self.assertEqual(activity.status, Activity.Status.BLOQUEADO)
+        self.assertEqual(response.data["status"], "bloqueado")
+
+    def test_dev_nao_bloqueia_activity(self):
+        activity = Activity.objects.create(
+            projeto=self.project,
+            no=self.processo,
+            nome="Validar NF-e",
+            tester=self.tester,
+            desenvolvedor=self.dev,
+            data_inicio_planejada=date(2026, 9, 1),
+            data_conclusao_planejada=date(2026, 9, 2),
+            status=Activity.Status.LIBERADO,
+        )
+        self.client.force_authenticate(user=self.dev)
+
+        response = self.client.post(
+            reverse("activities:block", kwargs={"project_id": self.project.id, "activity_id": activity.id}),
+            {"reason": "Dev não deve reprovar."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        activity.refresh_from_db()
+        self.assertEqual(activity.status, Activity.Status.LIBERADO)
 
     def test_activity_cancelada_nao_e_atualizada(self):
         activity = Activity.objects.create(
