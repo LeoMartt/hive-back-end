@@ -7,6 +7,7 @@ from .services import resolver_codigo_papel
 
 
 class TeamMemberSerializer(serializers.ModelSerializer):
+    membershipId = serializers.UUIDField(source="id", read_only=True)
     id = serializers.SerializerMethodField()
     initials = serializers.CharField(source="usuario.iniciais", read_only=True)
     name = serializers.SerializerMethodField()
@@ -15,7 +16,7 @@ class TeamMemberSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Membership
-        fields = ["id", "initials", "name", "email", "role"]
+        fields = ["membershipId", "id", "initials", "name", "email", "role"]
 
     def get_id(self, membership: Membership) -> str:
         return str(membership.usuario.entra_object_id or membership.usuario.id)

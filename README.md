@@ -314,6 +314,38 @@ Regras consolidadas do bloco de atividades:
 * os status válidos de atividade são `AGUARDANDO`, `LIBERADO`, `CONCLUIDO`, `BLOQUEADO` e `CANCELADO`;
 * upload/evidência será tratado em bloco posterior.
 
+## Issues
+
+O app `apps/issues` contém o primeiro bloco real de issues vinculadas às atividades.
+
+Rotas iniciais:
+
+```text
+GET /api/projects/<project_id>/issues/
+POST /api/projects/<project_id>/issues/
+GET /api/projects/<project_id>/issues/<issue_id>/
+POST /api/projects/<project_id>/issues/<issue_id>/start-analysis/
+POST /api/projects/<project_id>/issues/<issue_id>/propose-solution/
+POST /api/projects/<project_id>/issues/<issue_id>/resolve/
+POST /api/projects/<project_id>/issues/<issue_id>/cancel/
+```
+
+Regras consolidadas do bloco de issues:
+
+* `Issue.id` é numérico sequencial global e o código visível é calculado no formato `ISS-0001`;
+* toda issue nasce vinculada a uma `Activity`;
+* os status válidos são `ABERTA`, `EM_ANALISE`, `SOLUCAO_PROPOSTA`, `CONCLUIDA` e `CANCELADA`;
+* issue nova nasce como `ABERTA`;
+* criar issue é ação do tester da atividade;
+* a transição `ABERTA` -> `EM_ANALISE` é manual, via rota `start-analysis`, mantendo o comportamento de botão do frontend;
+* `start-analysis` e `propose-solution` são ações do desenvolvedor responsável;
+* `resolve` é ação do tester da atividade ou gestor;
+* ao resolver uma issue, se não existir mais nenhuma issue aberta para a atividade e ela estiver `BLOQUEADO`, a atividade volta para `LIBERADO`;
+* cancelar uma atividade cancela automaticamente as issues abertas ligadas a ela;
+* criar issue impeditiva bloqueia automaticamente apenas a atividade vinculada;
+* issue não impeditiva não altera o status da atividade;
+* upload real de evidências/anexos será tratado em bloco posterior.
+
 ## Git
 
 O projeto utiliza duas branches permanentes:

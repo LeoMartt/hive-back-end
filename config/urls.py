@@ -25,4 +25,8 @@ urlpatterns = [
         "api/projects/<uuid:project_id>/activities/",
         include("apps.activities.urls"),
     ),
+    path(
+        "api/projects/<uuid:project_id>/issues/",
+        include("apps.issues.urls"),
+    ),
 ]

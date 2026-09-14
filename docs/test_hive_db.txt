@@ -1,0 +1,80 @@
+Referencia do test_hive_db
+==========================
+
+Atualizado em: 2026-09-14
+
+Escopo
+------
+
+Este arquivo guarda somente informacoes do banco de teste test_hive_db.
+Pendencias de atividades ficam em docs/activities_pendencias.txt.
+Pendencias de issues ficam em docs/issues_pendencias.txt.
+
+
+Status atual
+------------
+
+A pendencia antiga de permissao do test_hive_db foi resolvida.
+
+Historico conhecido:
+
+- o erro antigo era: permission denied for schema public;
+- current_user = hive_user;
+- current_database = test_hive_db;
+- owner do schema public = azure_pg_admin;
+- hive_user tinha USAGE no schema public;
+- hive_user nao tinha CREATE no schema public.
+
+
+Correcao se o erro voltar
+-------------------------
+
+Conectar no banco test_hive_db como usuario admin do Azure PostgreSQL e rodar:
+
+GRANT ALL PRIVILEGES ON DATABASE test_hive_db TO hive_user;
+ALTER SCHEMA public OWNER TO hive_user;
+GRANT USAGE, CREATE ON SCHEMA public TO hive_user;
+
+Opcional para objetos futuros:
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO hive_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO hive_user;
+
+
+Conferencia
+-----------
+
+Rodar:
+
+SELECT
+    current_database(),
+    pg_get_userbyid(n.nspowner) AS schema_owner,
+    has_schema_privilege('hive_user', 'public', 'USAGE') AS hive_user_has_usage,
+    has_schema_privilege('hive_user', 'public', 'CREATE') AS hive_user_has_create
+FROM pg_namespace n
+WHERE n.nspname = 'public';
+
+Esperado:
+
+- schema_owner = hive_user;
+- hive_user_has_usage = true;
+- hive_user_has_create = true.
+
+
+Testes recomendados depois da correcao
+--------------------------------------
+
+Rodar:
+
+.\.venv\Scripts\python.exe manage.py test apps.activities --keepdb
+.\.venv\Scripts\python.exe manage.py test apps.issues --keepdb
+.\.venv\Scripts\python.exe manage.py test --keepdb
+
+
+Observacao sobre --keepdb
+-------------------------
+
+Usar --keepdb evita destruir e recriar o banco de teste.
+
+Se os testes forem rodados sem --keepdb e o Django recriar test_hive_db, pode
+ser necessario repetir a correcao de owner/permissao do schema public.
