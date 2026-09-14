@@ -87,8 +87,9 @@ class ProjectListViewTests(APITestCase):
         self.assertEqual(project["progressPercent"], 0)
         self.assertIsNone(project["spi"])
         self.assertEqual(parse_datetime(project["updatedAt"]), self.crm.atualizado_em)
+        self.assertTrue(all(member["membershipId"] for member in project["team"]))
         self.assertEqual(
-            project["team"],
+            [{key: value for key, value in member.items() if key != "membershipId"} for member in project["team"]],
             [
                 {
                     "id": str(self.gestor.id),
@@ -218,15 +219,19 @@ class ProjectListViewTests(APITestCase):
                 papel__codigo=Papel.Codigo.DEV,
             ).exists()
         )
-        self.assertIn(
-            {
-                "id": str(entra_id),
-                "initials": "DU",
-                "name": "Dev Um",
-                "email": "dev.um@fumep.edu.br",
-                "role": "Desenvolvedor",
-            },
-            response.data["team"],
+        expected_member = {
+            "id": str(entra_id),
+            "initials": "DU",
+            "name": "Dev Um",
+            "email": "dev.um@fumep.edu.br",
+            "role": "Desenvolvedor",
+        }
+        self.assertTrue(
+            any(
+                all(member.get(key) == value for key, value in expected_member.items())
+                and member.get("membershipId")
+                for member in response.data["team"]
+            )
         )
 
     def test_nao_cria_projeto_ativo_com_mesmo_nome_e_modo(self):

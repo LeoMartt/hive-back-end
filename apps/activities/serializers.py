@@ -119,7 +119,7 @@ class ActivitySerializer(serializers.ModelSerializer):
         return [predecessora.id for predecessora in activity.predecessoras.all()]
 
     def get_issueCount(self, activity: Activity) -> int:
-        return 0
+        return activity.issues.exclude(status__in=["CONCLUIDA", "CANCELADA"]).count()
 
     def get_notes(self, activity: Activity) -> str | None:
         return activity.observacoes or None

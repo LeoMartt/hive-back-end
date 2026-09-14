@@ -1,0 +1,133 @@
+Pendencias da rota de issues
+============================
+
+Atualizado em: 2026-09-14
+
+Escopo
+------
+
+Este arquivo guarda somente pendencias da rota/bloco de issues.
+
+
+O que ja existe em issues
+-------------------------
+
+O bloco de issues ja tem:
+
+- app apps.issues;
+- model Issue;
+- Issue.id numerico sequencial global como PK;
+- codigo visivel calculado a partir do id: ISS-0001, ISS-0002, ISS-9999,
+  ISS-10000;
+- issue vinculada obrigatoriamente a Activity;
+- listagem real por projeto;
+- criacao real via POST;
+- detalhe real via GET;
+- transicoes:
+  - start-analysis;
+  - propose-solution;
+  - resolve;
+  - cancel no backend;
+- status validos: ABERTA, EM_ANALISE, SOLUCAO_PROPOSTA, CONCLUIDA e
+  CANCELADA;
+- start-analysis manual, acionado por botao/rota, igual ao front;
+- propose-solution pelo desenvolvedor responsavel;
+- resolve pelo tester da atividade ou gestor;
+- issue impeditiva bloqueia automaticamente apenas a Activity vinculada;
+- issue nao impeditiva nao altera o status da Activity;
+- ao resolver a ultima issue aberta de uma atividade bloqueada, a Activity
+  volta para LIBERADO ou AGUARDANDO conforme predecessoras;
+- cancelar Activity cancela as issues abertas ligadas a ela;
+- front lendo issues reais quando VITE_USE_MOCKS=false;
+- front reconhece status cancelada;
+- issue nao tem edicao/PATCH por decisao do projeto.
+
+
+Pendencias
+----------
+
+1. QA manual no navegador
+
+   Testar pelo front, com VITE_USE_MOCKS=false:
+
+   - abrir lista de issues de um projeto;
+   - criar issue nao impeditiva e confirmar que Activity nao muda de status;
+   - criar issue impeditiva e confirmar que apenas a Activity vinculada fica
+     BLOQUEADO;
+   - iniciar analise pelo botao;
+   - propor solucao;
+   - resolver issue e confirmar status CONCLUIDA;
+   - resolver a ultima issue aberta de uma Activity bloqueada e confirmar que a
+     Activity volta para LIBERADO ou AGUARDANDO conforme predecessoras;
+   - cancelar Activity e confirmar que issues abertas vinculadas viram
+     CANCELADA.
+
+
+2. Upload real de anexos/evidencias
+
+   Por enquanto, front/backend trabalham com metadados de arquivo.
+
+   Ainda falta:
+
+   - definir armazenamento real, provavelmente Azure Blob;
+   - enviar arquivo de abertura da issue;
+   - enviar arquivo de solucao proposta;
+   - validar tamanho/tipo conforme configuracao do projeto;
+   - salvar URL/chave do arquivo no banco;
+   - decidir regra de obrigatoriedade para issue impeditiva.
+
+
+3. Auditoria real de issues
+
+   Hoje a tela consegue derivar um historico simples a partir dos campos da
+   issue, mas ainda nao existe tabela/evento de auditoria real.
+
+   Ainda falta:
+
+   - criar apps/audit ou equivalente;
+   - registrar quem fez cada transicao;
+   - registrar status anterior/status novo;
+   - registrar data/hora de cada transicao;
+   - registrar criacao, inicio de analise, proposta de solucao, resolucao e
+     cancelamento.
+
+
+4. Exportacao/auditoria de issues
+
+   O front exporta a tabela atual, mas ainda falta uma rota backend propria para
+   exportacao auditavel.
+
+   Pontos pendentes:
+
+   - definir formato de exportacao oficial;
+   - decidir se o export sera gerado pelo backend ou apenas pelo front;
+   - incluir trilha de auditoria real quando existir;
+   - garantir que issues canceladas/concluidas continuem disponiveis em modo de
+     auditoria.
+
+
+5. Cancelamento direto pelo front
+
+   O backend ja tem rota de cancelamento de issue.
+
+   Ainda falta decidir/implementar no front:
+
+   - se havera botao de cancelar issue diretamente;
+   - quais papeis podem cancelar issue pela tela;
+   - como exibir o motivo, se for necessario;
+   - se cancelar a ultima issue aberta tambem deve tentar liberar a Activity.
+
+
+6. Estados visuais de loading/erro
+
+   O hook useIssues ja expoe loading/error, mas as telas ainda precisam tratar
+   esses estados com UI dedicada.
+
+   Ainda falta:
+
+   - loading na lista de issues;
+   - erro de listagem;
+   - erro ao criar issue;
+   - erro ao iniciar analise;
+   - erro ao propor solucao;
+   - erro ao resolver issue.

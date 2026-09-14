@@ -203,7 +203,12 @@ def cancelar_activity(*, activity: Activity) -> Activity:
     if activity.status == Activity.Status.CONCLUIDO:
         raise DRFValidationError({"status": "Atividade concluída não pode ser cancelada."})
     activity.status = Activity.Status.CANCELADO
-    return salvar_activity(activity)
+    activity = salvar_activity(activity)
+
+    from apps.issues.services import cancelar_issues_da_activity
+
+    cancelar_issues_da_activity(activity)
+    return activity
 
 
 @transaction.atomic
