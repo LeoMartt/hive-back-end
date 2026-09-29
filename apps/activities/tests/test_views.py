@@ -1,5 +1,7 @@
 from datetime import date
+from unittest.mock import patch
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from rest_framework.test import APITestCase
 
@@ -66,6 +68,15 @@ class ActivityViewTests(APITestCase):
         ]:
             Membership.objects.create(usuario=usuario, projeto=cls.project, papel=papel)
 
+    def evidencia(self, file_name="evidencia.pdf", content_type="application/pdf"):
+        return {
+            "fileName": file_name,
+            "sizeLabel": "10 KB",
+            "uploadedBy": "Tester Um",
+            "uploadedAt": "2026-09-01T10:00:00",
+            "contentType": content_type,
+        }
+
     def test_sem_autenticacao_retorna_401(self):
         response = self.client.get(reverse("activities:list", kwargs={"project_id": self.project.id}))
 
@@ -83,7 +94,6 @@ class ActivityViewTests(APITestCase):
             "area": "Fiscal",
             "system": "SAP",
             "transaction": "VF01",
-            "wbs": "1.2.3",
             "expectedResult": "NF-e emitida sem divergência.",
             "notes": "Cenário principal.",
         }
@@ -139,6 +149,63 @@ class ActivityViewTests(APITestCase):
             ActivityPredecessor.objects.filter(atividade=activity, predecessora=predecessor).exists()
         )
         self.assertEqual(response.data["predecessors"], [predecessor.codigo_visivel])
+
+    def test_import_csv_cria_activities_com_predecessoras_temporarias(self):
+        self.client.force_authenticate(user=self.gestor)
+        content = (
+            "Modulo,Processo,Atividade nome,Tester email,Dev email,Data inicio planejado,"
+            "Data final planejada,Id lista sequencial (temporario),Predecessores,Sistema,Area,"
+            "Transação,Resultado esperado,Observações\n"
+            "Faturamento,Emissão de NF-e,Preparar massa,tester@fumep.edu.br,dev@fumep.edu.br,"
+            "01/09/2026,02/09/2026,1,,SAP,Fiscal,VF01,Massa preparada,Primeira linha\n"
+            "Faturamento,Emissão de NF-e,Executar teste,tester@fumep.edu.br,dev@fumep.edu.br,"
+            "03/09/2026,05/09/2026,2,1,SAP,Fiscal,VF02,NF-e emitida,Depende da linha 1\n"
+        )
+        uploaded = SimpleUploadedFile(
+            "atividades.csv",
+            content.encode("utf-8"),
+            content_type="text/csv",
+        )
+
+        response = self.client.post(
+            reverse("activities:import", kwargs={"project_id": self.project.id}),
+            {"file": uploaded},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["created"], 2)
+        first = Activity.objects.get(nome="Preparar massa")
+        second = Activity.objects.get(nome="Executar teste")
+        self.assertEqual(first.status, Activity.Status.LIBERADO)
+        self.assertEqual(second.status, Activity.Status.AGUARDANDO)
+        self.assertEqual(first.sistema, "SAP")
+        self.assertTrue(ActivityPredecessor.objects.filter(atividade=second, predecessora=first).exists())
+        self.assertEqual(response.data["activities"][1]["predecessors"], [first.codigo_visivel])
+
+    def test_import_csv_com_erro_nao_cria_nada(self):
+        self.client.force_authenticate(user=self.gestor)
+        content = (
+            "Modulo,Processo,Atividade nome,Tester email,Dev email,Data inicio planejado,"
+            "Data final planejada,Id lista sequencial (temporario),Predecessores\n"
+            "Faturamento,Emissão de NF-e,Executar teste,inexistente@fumep.edu.br,dev@fumep.edu.br,"
+            "03/09/2026,05/09/2026,1,\n"
+        )
+        uploaded = SimpleUploadedFile(
+            "atividades.csv",
+            content.encode("utf-8"),
+            content_type="text/csv",
+        )
+
+        response = self.client.post(
+            reverse("activities:import", kwargs={"project_id": self.project.id}),
+            {"file": uploaded},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("rows", response.data)
+        self.assertEqual(Activity.objects.count(), 0)
 
     def test_create_rejeita_tester_sem_membership_tester(self):
         self.client.force_authenticate(user=self.gestor)
@@ -356,7 +423,10 @@ class ActivityViewTests(APITestCase):
 
         response = self.client.post(
             reverse("activities:complete", kwargs={"project_id": self.project.id, "activity_id": activity.id}),
-            {"approvalNote": "Cenário validado."},
+            {
+                "approvalNote": "Cenário validado.",
+                "approvalEvidence": self.evidencia(),
+            },
             format="json",
         )
 
@@ -365,6 +435,98 @@ class ActivityViewTests(APITestCase):
         self.assertEqual(activity.status, Activity.Status.CONCLUIDO)
         self.assertEqual(response.data["status"], "concluido")
         self.assertEqual(activity.observacao_aprovacao, "Cenário validado.")
+        self.assertEqual(activity.evidencia_aprovacao["fileName"], "evidencia.pdf")
+        self.assertEqual(response.data["approvalEvidence"]["fileName"], "evidencia.pdf")
+
+    @patch("apps.activities.services.upload_evidencia")
+    def test_tester_conclui_activity_com_upload_real_de_evidencia(self, upload_evidencia):
+        upload_evidencia.return_value = {
+            **self.evidencia("print-validacao.png", "image/png"),
+            "storagePath": "projects/proj/activities/ATV-0001/approval/abc-print-validacao.png",
+            "url": "https://storage.test/blob?sas=1",
+            "urlExpiresAt": "2027-03-01T10:00:00+00:00",
+        }
+        activity = Activity.objects.create(
+            projeto=self.project,
+            no=self.processo,
+            nome="Validar NF-e",
+            tester=self.tester,
+            desenvolvedor=self.dev,
+            data_inicio_planejada=date(2026, 9, 1),
+            data_conclusao_planejada=date(2026, 9, 2),
+            status=Activity.Status.LIBERADO,
+        )
+        uploaded = SimpleUploadedFile(
+            "print-validacao.png",
+            b"fake image",
+            content_type="image/png",
+        )
+        self.client.force_authenticate(user=self.tester)
+
+        response = self.client.post(
+            reverse("activities:complete", kwargs={"project_id": self.project.id, "activity_id": activity.id}),
+            {
+                "approvalNote": "Cenário validado.",
+                "approvalFile": uploaded,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        activity.refresh_from_db()
+        self.assertEqual(activity.status, Activity.Status.CONCLUIDO)
+        self.assertEqual(activity.evidencia_aprovacao["storagePath"], upload_evidencia.return_value["storagePath"])
+        self.assertEqual(response.data["approvalEvidence"]["url"], "https://storage.test/blob?sas=1")
+        upload_evidencia.assert_called_once()
+
+    def test_concluir_activity_sem_evidencia_retorna_400(self):
+        activity = Activity.objects.create(
+            projeto=self.project,
+            no=self.processo,
+            nome="Validar NF-e",
+            tester=self.tester,
+            desenvolvedor=self.dev,
+            data_inicio_planejada=date(2026, 9, 1),
+            data_conclusao_planejada=date(2026, 9, 2),
+            status=Activity.Status.LIBERADO,
+        )
+        self.client.force_authenticate(user=self.tester)
+
+        response = self.client.post(
+            reverse("activities:complete", kwargs={"project_id": self.project.id, "activity_id": activity.id}),
+            {"approvalNote": "Cenário validado."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        activity.refresh_from_db()
+        self.assertEqual(activity.status, Activity.Status.LIBERADO)
+
+    def test_concluir_activity_rejeita_audio_video_como_evidencia(self):
+        activity = Activity.objects.create(
+            projeto=self.project,
+            no=self.processo,
+            nome="Validar NF-e",
+            tester=self.tester,
+            desenvolvedor=self.dev,
+            data_inicio_planejada=date(2026, 9, 1),
+            data_conclusao_planejada=date(2026, 9, 2),
+            status=Activity.Status.LIBERADO,
+        )
+        self.client.force_authenticate(user=self.tester)
+
+        response = self.client.post(
+            reverse("activities:complete", kwargs={"project_id": self.project.id, "activity_id": activity.id}),
+            {
+                "approvalNote": "Cenário validado.",
+                "approvalEvidence": self.evidencia("evidencia.mp4", "video/mp4"),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        activity.refresh_from_db()
+        self.assertEqual(activity.status, Activity.Status.LIBERADO)
 
     def test_tester_bloqueia_activity_propria(self):
         activity = Activity.objects.create(

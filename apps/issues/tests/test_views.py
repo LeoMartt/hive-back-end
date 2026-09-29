@@ -1,5 +1,7 @@
 from datetime import date
+from unittest.mock import patch
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from rest_framework.test import APITestCase
 
@@ -103,6 +105,7 @@ class IssueViewTests(APITestCase):
                 "sizeLabel": "10 KB",
                 "uploadedBy": "Tester Um",
                 "uploadedAt": "2026-09-01T10:00:00",
+                "contentType": "application/pdf",
             },
         }
 
@@ -128,6 +131,44 @@ class IssueViewTests(APITestCase):
         self.assertEqual(response.data["id"], issue.codigo_visivel)
         self.assertEqual(response.data["relatedActivityId"], activity.codigo_visivel)
         self.assertEqual(response.data["status"], "aberta")
+
+    @patch("apps.issues.services.upload_evidencia")
+    def test_tester_cria_issue_com_upload_real_de_evidencia(self, upload_evidencia):
+        upload_evidencia.return_value = {
+            "fileName": "erro-fiscal.png",
+            "sizeLabel": "10 KB",
+            "uploadedBy": "Tester Um",
+            "uploadedAt": "2026-09-01T10:00:00",
+            "contentType": "image/png",
+            "storagePath": "projects/proj/activities/ATV-0001/issues/ISS-0001/opening/erro-fiscal.png",
+            "url": "https://storage.test/opening?sas=1",
+            "urlExpiresAt": "2027-03-01T10:00:00+00:00",
+        }
+        activity = self.criar_activity()
+        uploaded = SimpleUploadedFile("erro-fiscal.png", b"fake image", content_type="image/png")
+        self.client.force_authenticate(user=self.tester)
+
+        response = self.client.post(
+            reverse("issues:list", kwargs={"project_id": self.project.id}),
+            {
+                "title": "Alíquota incorreta na NF-e",
+                "description": "Valor calculado diferente do esperado.",
+                "type": "requisito",
+                "impeditiva": "true",
+                "impact": "alto",
+                "impactNote": "bloqueia o cenário fiscal",
+                "developerId": str(self.dev.id),
+                "relatedActivityId": activity.codigo_visivel,
+                "openingFile": uploaded,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        issue = Issue.objects.get()
+        self.assertEqual(issue.anexo_abertura["storagePath"], upload_evidencia.return_value["storagePath"])
+        self.assertEqual(response.data["openingAttachment"]["url"], "https://storage.test/opening?sas=1")
+        upload_evidencia.assert_called_once()
 
     def test_issue_nao_impeditiva_nao_bloqueia_activity(self):
         activity = self.criar_activity()
@@ -157,6 +198,42 @@ class IssueViewTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, 403)
+
+    def test_issue_impeditiva_exige_evidencia(self):
+        activity = self.criar_activity()
+        payload = self.payload_issue(activity)
+        payload["openingAttachment"] = None
+        self.client.force_authenticate(user=self.tester)
+
+        response = self.client.post(
+            reverse("issues:list", kwargs={"project_id": self.project.id}),
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("openingAttachment", response.data)
+
+    def test_issue_rejeita_audio_video_como_evidencia(self):
+        activity = self.criar_activity()
+        payload = self.payload_issue(activity)
+        payload["openingAttachment"] = {
+            "fileName": "erro.mp3",
+            "sizeLabel": "80 KB",
+            "uploadedBy": "Tester Um",
+            "uploadedAt": "2026-09-01T10:00:00",
+            "contentType": "audio/mpeg",
+        }
+        self.client.force_authenticate(user=self.tester)
+
+        response = self.client.post(
+            reverse("issues:list", kwargs={"project_id": self.project.id}),
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("openingAttachment", response.data)
 
     def test_start_analysis_e_manual_e_apenas_dev_responsavel(self):
         activity = self.criar_activity()
@@ -214,6 +291,84 @@ class IssueViewTests(APITestCase):
         issue.refresh_from_db()
         self.assertEqual(issue.status, Issue.Status.SOLUCAO_PROPOSTA)
         self.assertEqual(issue.solucao_proposta, "Ajustado cálculo de ICMS.")
+
+    @patch("apps.issues.services.upload_evidencia")
+    def test_dev_propoe_solucao_com_upload_real_de_evidencia(self, upload_evidencia):
+        upload_evidencia.return_value = {
+            "fileName": "solucao.png",
+            "sizeLabel": "10 KB",
+            "uploadedBy": "Dev Um",
+            "uploadedAt": "2026-09-01T10:00:00",
+            "contentType": "image/png",
+            "storagePath": "projects/proj/activities/ATV-0001/issues/ISS-0001/solution/solucao.png",
+            "url": "https://storage.test/solution?sas=1",
+            "urlExpiresAt": "2027-03-01T10:00:00+00:00",
+        }
+        activity = self.criar_activity()
+        issue = Issue.objects.create(
+            projeto=self.project,
+            atividade=activity,
+            titulo="Erro fiscal",
+            descricao="Falhou.",
+            tipo=Issue.Tipo.REQUISITO,
+            impacto=Issue.Impacto.ALTO,
+            impeditiva=True,
+            tester=self.tester,
+            desenvolvedor=self.dev,
+            status=Issue.Status.EM_ANALISE,
+        )
+        uploaded = SimpleUploadedFile("solucao.png", b"fake image", content_type="image/png")
+        self.client.force_authenticate(user=self.dev)
+
+        response = self.client.post(
+            reverse("issues:propose-solution", kwargs={"project_id": self.project.id, "issue_id": issue.id}),
+            {
+                "proposedSolution": "Ajustado cálculo de ICMS.",
+                "solutionFile": uploaded,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        issue.refresh_from_db()
+        self.assertEqual(issue.anexo_solucao["storagePath"], upload_evidencia.return_value["storagePath"])
+        self.assertEqual(response.data["solutionAttachment"]["url"], "https://storage.test/solution?sas=1")
+        upload_evidencia.assert_called_once()
+
+    def test_dev_nao_propoe_solucao_com_audio_video(self):
+        activity = self.criar_activity()
+        issue = Issue.objects.create(
+            projeto=self.project,
+            atividade=activity,
+            titulo="Erro fiscal",
+            descricao="Falhou.",
+            tipo=Issue.Tipo.REQUISITO,
+            impacto=Issue.Impacto.ALTO,
+            impeditiva=True,
+            tester=self.tester,
+            desenvolvedor=self.dev,
+            status=Issue.Status.EM_ANALISE,
+        )
+        self.client.force_authenticate(user=self.dev)
+
+        response = self.client.post(
+            reverse("issues:propose-solution", kwargs={"project_id": self.project.id, "issue_id": issue.id}),
+            {
+                "proposedSolution": "Ajustado cálculo de ICMS.",
+                "solutionAttachment": {
+                    "fileName": "gravacao.mov",
+                    "sizeLabel": "400 KB",
+                    "uploadedBy": "Dev Um",
+                    "uploadedAt": "2026-09-01T10:00:00",
+                    "contentType": "video/quicktime",
+                },
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        issue.refresh_from_db()
+        self.assertEqual(issue.status, Issue.Status.EM_ANALISE)
 
     def test_tester_resolve_issue_e_libera_activity_sem_outras_issues_abertas(self):
         activity = self.criar_activity(status=Activity.Status.BLOQUEADO)

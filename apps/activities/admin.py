@@ -13,8 +13,8 @@ class ActivityPredecessorInline(admin.TabularInline):
 class ActivityAdmin(admin.ModelAdmin):
     list_display = ("codigo_visivel", "nome", "projeto", "status", "tester", "desenvolvedor")
     list_filter = ("status", "projeto")
-    search_fields = ("nome", "area", "sistema", "transacao", "wbs")
-    readonly_fields = ("criado_em", "atualizado_em", "codigo_visivel")
+    search_fields = ("nome", "area", "sistema", "transacao")
+    readonly_fields = ("criado_em", "atualizado_em", "codigo_visivel", "evidencia_aprovacao")
     inlines = [ActivityPredecessorInline]
 
 

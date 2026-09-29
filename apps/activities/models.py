@@ -48,10 +48,10 @@ class Activity(models.Model):
     area = models.CharField(max_length=100, blank=True, default="")
     sistema = models.CharField(max_length=100, blank=True, default="")
     transacao = models.CharField(max_length=50, blank=True, default="")
-    wbs = models.CharField(max_length=50, blank=True, default="")
     resultado_esperado = models.TextField(blank=True, default="")
     observacoes = models.TextField(blank=True, default="")
     observacao_aprovacao = models.TextField(blank=True, default="")
+    evidencia_aprovacao = models.JSONField(null=True, blank=True)
     predecessoras = models.ManyToManyField(
         "self",
         through="ActivityPredecessor",

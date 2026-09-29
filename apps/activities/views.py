@@ -1,9 +1,13 @@
+import json
+
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .importer import importar_activities_de_arquivo
 from apps.projects.models import Project
 from apps.projects.services import exigir_gestor, usuario_pode_gerenciar_projeto
 
@@ -22,6 +26,18 @@ from .services import (
     concluir_activity,
     criar_activity,
 )
+
+
+def dados_request_com_json(request, json_fields: tuple[str, ...]) -> dict:
+    dados = request.data.dict() if hasattr(request.data, "dict") else dict(request.data)
+    for field in json_fields:
+        value = dados.get(field)
+        if isinstance(value, str) and value.strip():
+            try:
+                dados[field] = json.loads(value)
+            except json.JSONDecodeError:
+                pass
+    return dados
 
 
 def usuario_pode_testar_activity(user, activity):
@@ -78,6 +94,24 @@ class ActivityCollectionView(ActivityQuerysetMixin, APIView):
         return Response(ActivitySerializer(activity).data, status=status.HTTP_201_CREATED)
 
 
+class ActivityImportView(ActivityQuerysetMixin, APIView):
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, project_id):
+        project = self.visible_project(project_id)
+        exigir_gestor(request.user, project)
+        uploaded_file = request.FILES.get("file")
+        if uploaded_file is None:
+            return Response({"file": "Envie o arquivo no campo file."}, status=status.HTTP_400_BAD_REQUEST)
+
+        activities = importar_activities_de_arquivo(projeto=project, uploaded_file=uploaded_file)
+        serializer = ActivitySerializer(activities, many=True)
+        return Response(
+            {"created": len(activities), "activities": serializer.data},
+            status=status.HTTP_201_CREATED,
+        )
+
+
 class ActivityDetailView(ActivityQuerysetMixin, APIView):
     def get(self, request, project_id, activity_id):
         project = self.visible_project(project_id)
@@ -108,15 +142,30 @@ class ActivityCancelView(ActivityQuerysetMixin, APIView):
 
 
 class ActivityCompleteView(ActivityQuerysetMixin, APIView):
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
+
     def post(self, request, project_id, activity_id):
         project = self.visible_project(project_id)
         activity = self.get_activity(project, activity_id)
         exigir_gestor_ou_tester_da_activity(request.user, activity)
-        serializer = ActivityCompleteSerializer(data=request.data)
+        evidence_file = request.FILES.get("approvalFile")
+        dados = dados_request_com_json(request, ("approvalEvidence",))
+        if evidence_file is not None and not dados.get("approvalEvidence"):
+            dados["approvalEvidence"] = {
+                "fileName": evidence_file.name,
+                "sizeLabel": f"{max(1, (evidence_file.size + 1023) // 1024)} KB",
+                "uploadedBy": request.user.first_name or request.user.username,
+                "uploadedAt": "",
+                "contentType": getattr(evidence_file, "content_type", "") or "",
+            }
+        serializer = ActivityCompleteSerializer(data=dados)
         serializer.is_valid(raise_exception=True)
         activity = concluir_activity(
             activity=activity,
             observacao_aprovacao=serializer.validated_data.get("approvalNote") or "",
+            evidencia_aprovacao=serializer.validated_data["approvalEvidence"],
+            evidencia_file=evidence_file,
+            usuario=request.user,
         )
         return Response(ActivitySerializer(activity).data)
 

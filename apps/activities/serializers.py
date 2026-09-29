@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from common.validators.attachments import validar_anexo_evidencia
+
 from .models import Activity
 from .services import formatar_codigo_activity, resolver_activity_por_codigo
 
@@ -34,7 +36,6 @@ class ActivitySerializer(serializers.ModelSerializer):
     predecessorIds = serializers.SerializerMethodField()
     retestCount = serializers.IntegerField(source="numero_retest", read_only=True)
     issueCount = serializers.SerializerMethodField()
-    wbs = serializers.CharField(read_only=True)
     area = serializers.CharField(read_only=True)
     system = serializers.CharField(source="sistema", read_only=True)
     transaction = serializers.CharField(source="transacao", read_only=True)
@@ -70,7 +71,6 @@ class ActivitySerializer(serializers.ModelSerializer):
             "predecessorIds",
             "retestCount",
             "issueCount",
-            "wbs",
             "area",
             "system",
             "transaction",
@@ -125,10 +125,10 @@ class ActivitySerializer(serializers.ModelSerializer):
         return activity.observacoes or None
 
     def get_attachments(self, activity: Activity) -> list:
-        return []
+        return [activity.evidencia_aprovacao] if activity.evidencia_aprovacao else []
 
     def get_approvalEvidence(self, activity: Activity):
-        return None
+        return activity.evidencia_aprovacao
 
     def get_rejectedAt(self, activity: Activity):
         return None
@@ -155,7 +155,6 @@ class ActivityWriteSerializer(serializers.Serializer):
     area = serializers.CharField(max_length=100, required=False, allow_blank=True)
     system = serializers.CharField(max_length=100, required=False, allow_blank=True)
     transaction = serializers.CharField(max_length=50, required=False, allow_blank=True)
-    wbs = serializers.CharField(max_length=50, required=False, allow_blank=True)
     expectedResult = serializers.CharField(required=False, allow_blank=True)
     notes = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
@@ -195,6 +194,13 @@ class ActivityCreateSerializer(ActivityWriteSerializer):
 
 class ActivityCompleteSerializer(serializers.Serializer):
     approvalNote = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    approvalEvidence = serializers.JSONField(required=True)
+
+    def validate_approvalEvidence(self, value):
+        anexo = validar_anexo_evidencia(value, field_name="approvalEvidence")
+        if not anexo:
+            raise serializers.ValidationError("Evidência é obrigatória para concluir atividade.")
+        return anexo
 
 
 class ActivityBlockSerializer(serializers.Serializer):

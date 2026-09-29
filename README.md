@@ -277,6 +277,7 @@ GET /api/projects/<project_id>/activities/
 POST /api/projects/<project_id>/activities/
 GET /api/projects/<project_id>/activities/<activity_id>/
 PATCH /api/projects/<project_id>/activities/<activity_id>/
+POST /api/projects/<project_id>/activities/import/
 POST /api/projects/<project_id>/activities/<activity_id>/complete/
 POST /api/projects/<project_id>/activities/<activity_id>/block/
 POST /api/projects/<project_id>/activities/<activity_id>/cancel/
@@ -300,6 +301,7 @@ Regras consolidadas do bloco de atividades:
 * a conclusão de uma atividade libera automaticamente dependentes que estavam `AGUARDANDO` e ficaram com todas as predecessoras `CONCLUIDO`;
 * predecessores serão persistidos em tabela associativa, não como texto separado por `;`;
 * na importação CSV/Excel, os predecessores podem usar códigos temporários do próprio arquivo, resolvidos para IDs reais durante a importação;
+* na importação CSV/Excel, a coluna `Sistema` preenche `Activity.sistema`;
 * `tester` e `desenvolvedor` são obrigatórios e devem ter `Membership` no projeto com papel compatível;
 * atividade não será deletada fisicamente; será apenas cancelada;
 * atividade cancelada não volta para outro status;
@@ -312,7 +314,9 @@ Regras consolidadas do bloco de atividades:
   * não é permitido editar atividade `CONCLUIDO` ou `CANCELADO`;
   * nos demais status, o `GESTOR` pode editar os outros campos da atividade;
 * os status válidos de atividade são `AGUARDANDO`, `LIBERADO`, `CONCLUIDO`, `BLOQUEADO` e `CANCELADO`;
-* upload/evidência será tratado em bloco posterior.
+* concluir atividade exige evidência enviada em `approvalFile`;
+* evidências são armazenadas no Azure Blob e salvas em `evidencia_aprovacao` com `storagePath`, `url` SAS e `urlExpiresAt`;
+* áudio e vídeo não são permitidos como evidência.
 
 ## Issues
 
@@ -344,7 +348,12 @@ Regras consolidadas do bloco de issues:
 * cancelar uma atividade cancela automaticamente as issues abertas ligadas a ela;
 * criar issue impeditiva bloqueia automaticamente apenas a atividade vinculada;
 * issue não impeditiva não altera o status da atividade;
-* upload real de evidências/anexos será tratado em bloco posterior.
+* activity só pode ser concluída com evidência;
+* issue impeditiva exige evidência quando a configuração do projeto estiver ligada;
+* arquivos de abertura da issue são enviados em `openingFile`;
+* arquivos de solução proposta são enviados em `solutionFile`;
+* evidências/anexos são armazenados no Azure Blob e salvos com `storagePath`, `url` SAS e `urlExpiresAt`;
+* evidências em áudio ou vídeo são recusadas.
 
 ## Git
 

@@ -6,6 +6,7 @@ from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from apps.accounts.models import Usuario
 from apps.projects.models import Membership, NoHierarquia, Papel, Project
+from common.storage.evidences import upload_evidencia
 
 from .models import Activity, ActivityPredecessor
 
@@ -132,7 +133,6 @@ def criar_activity(*, projeto: Project, dados: dict) -> Activity:
         area=(dados.get("area") or "").strip(),
         sistema=(dados.get("system") or "").strip(),
         transacao=(dados.get("transaction") or "").strip(),
-        wbs=(dados.get("wbs") or "").strip(),
         resultado_esperado=(dados.get("expectedResult") or "").strip(),
         observacoes=(dados.get("notes") or "").strip(),
     )
@@ -171,7 +171,6 @@ def atualizar_activity(*, activity: Activity, dados: dict) -> Activity:
         "area": "area",
         "system": "sistema",
         "transaction": "transacao",
-        "wbs": "wbs",
         "expectedResult": "resultado_esperado",
         "notes": "observacoes",
     }
@@ -212,14 +211,31 @@ def cancelar_activity(*, activity: Activity) -> Activity:
 
 
 @transaction.atomic
-def concluir_activity(*, activity: Activity, observacao_aprovacao: str = "") -> Activity:
+def concluir_activity(
+    *,
+    activity: Activity,
+    observacao_aprovacao: str = "",
+    evidencia_aprovacao: dict | None = None,
+    evidencia_file=None,
+    usuario: Usuario | None = None,
+) -> Activity:
     if activity.status != Activity.Status.LIBERADO:
         raise DRFValidationError({"status": "Somente atividade liberada pode ser concluída."})
+    if not evidencia_aprovacao:
+        raise DRFValidationError({"approvalEvidence": "Evidência é obrigatória para concluir atividade."})
+    if evidencia_file is not None:
+        uploaded_by = usuario.first_name or usuario.username if usuario else ""
+        evidencia_aprovacao = upload_evidencia(
+            uploaded_file=evidencia_file,
+            blob_prefix=f"projects/{activity.projeto_id}/activities/{activity.codigo_visivel}/approval",
+            uploaded_by=uploaded_by,
+        )
     activity.status = Activity.Status.CONCLUIDO
     if not activity.data_inicio_real:
         activity.data_inicio_real = timezone.localdate()
     activity.data_conclusao_real = timezone.localdate()
     activity.observacao_aprovacao = observacao_aprovacao.strip()
+    activity.evidencia_aprovacao = evidencia_aprovacao
     activity = salvar_activity(activity)
     liberar_dependentes(activity)
     return activity

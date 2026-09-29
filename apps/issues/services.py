@@ -10,6 +10,7 @@ from apps.activities.models import Activity
 from apps.activities.services import salvar_activity, status_liberado_por_predecessoras
 from apps.projects.models import Membership, Papel, Project
 from apps.projects.services import usuario_pode_gerenciar_projeto
+from common.storage.evidences import upload_evidencia
 
 from .models import Issue
 
@@ -19,6 +20,10 @@ STATUS_ABERTOS = [
     Issue.Status.EM_ANALISE,
     Issue.Status.SOLUCAO_PROPOSTA,
 ]
+
+
+def nome_usuario(usuario: Usuario) -> str:
+    return usuario.first_name or usuario.username or usuario.email
 
 
 def usuario_pode_testar_activity(user: Usuario, activity: Activity) -> bool:
@@ -89,7 +94,7 @@ def bloquear_activity_por_issue_impeditiva(activity: Activity) -> None:
 
 
 @transaction.atomic
-def criar_issue(*, projeto: Project, usuario: Usuario, dados: dict) -> Issue:
+def criar_issue(*, projeto: Project, usuario: Usuario, dados: dict, opening_file=None) -> Issue:
     activity = dados["activity"]
     if activity.projeto_id != projeto.id:
         raise ValidationError({"relatedActivityId": "Atividade deve pertencer ao projeto."})
@@ -112,6 +117,13 @@ def criar_issue(*, projeto: Project, usuario: Usuario, dados: dict) -> Issue:
         desenvolvedor=desenvolvedor,
         anexo_abertura=dados.get("openingAttachment"),
     )
+    if opening_file is not None:
+        issue.anexo_abertura = upload_evidencia(
+            uploaded_file=opening_file,
+            blob_prefix=f"projects/{projeto.id}/activities/{activity.codigo_visivel}/issues/{issue.codigo_visivel}/opening",
+            uploaded_by=nome_usuario(usuario),
+        )
+        issue.save(update_fields=["anexo_abertura", "atualizada_em"])
     if issue.impeditiva:
         bloquear_activity_por_issue_impeditiva(activity)
     return issue
@@ -129,13 +141,22 @@ def iniciar_analise_issue(*, issue: Issue, usuario: Usuario) -> Issue:
 
 
 @transaction.atomic
-def propor_solucao_issue(*, issue: Issue, usuario: Usuario, dados: dict) -> Issue:
+def propor_solucao_issue(*, issue: Issue, usuario: Usuario, dados: dict, solution_file=None) -> Issue:
     exigir_dev_da_issue(usuario, issue)
     if issue.status != Issue.Status.EM_ANALISE:
         raise ValidationError({"status": "Somente issue em análise pode receber solução proposta."})
     issue.status = Issue.Status.SOLUCAO_PROPOSTA
     issue.solucao_proposta = dados["proposedSolution"].strip()
     issue.anexo_solucao = dados.get("solutionAttachment")
+    if solution_file is not None:
+        issue.anexo_solucao = upload_evidencia(
+            uploaded_file=solution_file,
+            blob_prefix=(
+                f"projects/{issue.projeto_id}/activities/{issue.atividade.codigo_visivel}/"
+                f"issues/{issue.codigo_visivel}/solution"
+            ),
+            uploaded_by=nome_usuario(usuario),
+        )
     issue.solucao_proposta_em = timezone.now()
     issue.save(
         update_fields=[
