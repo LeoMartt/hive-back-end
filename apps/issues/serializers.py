@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from apps.activities.services import resolver_activity_por_codigo
+from common.validators.attachments import validar_anexo_evidencia
 
 from .models import Issue
 
@@ -152,9 +153,24 @@ class IssueCreateSerializer(serializers.Serializer):
         attrs["activity"] = resolver_activity_por_codigo(attrs.pop("relatedActivityId"), project)
         attrs["type"] = TIPO_MODEL[attrs["type"]]
         attrs["impact"] = IMPACTO_MODEL[attrs["impact"]]
+        attrs["openingAttachment"] = validar_anexo_evidencia(
+            attrs.get("openingAttachment"),
+            field_name="openingAttachment",
+        )
+        if (
+            attrs["impeditiva"]
+            and project.exigir_evidencia_issue
+            and not attrs.get("openingAttachment")
+        ):
+            raise serializers.ValidationError(
+                {"openingAttachment": "Evidência é obrigatória para issue impeditiva."}
+            )
         return attrs
 
 
 class IssueProposeSolutionSerializer(serializers.Serializer):
     proposedSolution = serializers.CharField()
     solutionAttachment = serializers.JSONField(required=False, allow_null=True)
+
+    def validate_solutionAttachment(self, value):
+        return validar_anexo_evidencia(value, field_name="solutionAttachment")

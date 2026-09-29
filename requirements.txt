@@ -6,3 +6,4 @@ psycopg2-binary
 django-storages
 azure-storage-blob
 PyJWT[crypto]
+openpyxl

@@ -35,6 +35,13 @@ O bloco de issues ja tem:
 - resolve pelo tester da atividade ou gestor;
 - issue impeditiva bloqueia automaticamente apenas a Activity vinculada;
 - issue nao impeditiva nao altera o status da Activity;
+- issue impeditiva exige evidencia quando a configuracao do projeto estiver
+  ligada;
+- upload real/binario de evidencias de abertura e solucao proposta para Azure
+  Blob;
+- metadados de evidencia de abertura e solucao proposta ja sao persistidos com
+  storagePath, url SAS e urlExpiresAt;
+- evidencias em audio ou video sao recusadas;
 - ao resolver a ultima issue aberta de uma atividade bloqueada, a Activity
   volta para LIBERADO ou AGUARDANDO conforme predecessoras;
 - cancelar Activity cancela as issues abertas ligadas a ela;
@@ -63,18 +70,16 @@ Pendencias
      CANCELADA.
 
 
-2. Upload real de anexos/evidencias
+2. Refinamentos de anexos/evidencias
 
-   Por enquanto, front/backend trabalham com metadados de arquivo.
+   O upload real para Azure Blob ja existe para abertura da issue e proposta
+   de solucao. O backend recebe openingFile/solutionFile via multipart/form-data,
+   salva o arquivo no container configurado e persiste metadados com link SAS.
 
    Ainda falta:
 
-   - definir armazenamento real, provavelmente Azure Blob;
-   - enviar arquivo de abertura da issue;
-   - enviar arquivo de solucao proposta;
-   - validar tamanho/tipo conforme configuracao do projeto;
-   - salvar URL/chave do arquivo no banco;
-   - decidir regra de obrigatoriedade para issue impeditiva.
+   - validar tamanho conforme configuracao do projeto;
+   - decidir se solucao proposta deve exigir evidencia obrigatoria em algum caso.
 
 
 3. Auditoria real de issues

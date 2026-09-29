@@ -28,6 +28,14 @@ AZURE_TENANT_ID = env("AZURE_TENANT_ID")
 AZURE_CLIENT_ID = env("AZURE_CLIENT_ID")
 
 
+# Azure Blob Storage — evidências de atividades/issues
+
+AZURE_ACCOUNT_NAME = env("AZURE_ACCOUNT_NAME", default="")
+AZURE_ACCOUNT_KEY = env("AZURE_ACCOUNT_KEY", default="")
+AZURE_CONTAINER = env("AZURE_CONTAINER", default="")
+AZURE_EVIDENCE_SAS_DAYS = env.int("AZURE_EVIDENCE_SAS_DAYS", default=180)
+
+
 # Application definition
 
 INSTALLED_APPS = [

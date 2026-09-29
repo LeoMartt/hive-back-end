@@ -12,13 +12,6 @@ DATABASES = {
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS")
 
 
-# Azure Blob Storage (evidências de aprovação, anexos de issues)
-# https://django-storages.readthedocs.io/en/latest/backends/azure.html
-
-AZURE_ACCOUNT_NAME = env("AZURE_ACCOUNT_NAME")
-AZURE_ACCOUNT_KEY = env("AZURE_ACCOUNT_KEY")
-AZURE_CONTAINER = env("AZURE_CONTAINER")
-
 STORAGES = {
     "default": {
         "BACKEND": "storages.backends.azure_storage.AzureStorage",

@@ -1,7 +1,7 @@
 Pendencias da rota de atividades
 ================================
 
-Atualizado em: 2026-09-14
+Atualizado em: 2026-09-29
 
 Escopo
 ------
@@ -41,8 +41,20 @@ O bloco de activities ja tem:
   - UAT aponta para NoHierarquia nivel 2;
   - CUTOVER aponta para NoHierarquia nivel 1;
 - validacao de tester/dev por Membership no projeto;
+- importacao em massa via POST /api/projects/<id>/activities/import/:
+  - aceita .csv e .xlsx;
+  - usa Id lista sequencial (temporario) somente como referencia interna do
+    arquivo;
+  - resolve Predecessores a partir desses ids temporarios;
+  - valida todas as linhas antes de criar qualquer Activity;
+  - coluna Sistema da planilha e salva no campo sistema da Activity;
 - front lendo activities reais quando VITE_USE_MOCKS=false;
 - modal "Nova atividade" usando hierarquia real e IDs reais de tester/dev;
+- conclusao de atividade exige evidencia;
+- upload real/binario da evidencia de aprovacao para Azure Blob;
+- metadados da evidencia de aprovacao sao salvos em evidencia_aprovacao,
+  incluindo storagePath, url SAS e urlExpiresAt;
+- evidencias em audio ou video sao recusadas;
 - integracao com issues:
   - issue impeditiva bloqueia a Activity vinculada;
   - ao resolver a ultima issue aberta, Activity bloqueada volta para LIBERADO
@@ -70,37 +82,19 @@ Pendencias
      correto.
 
 
-2. Evidencia/upload de atividades
+2. Refinamentos de evidencias de atividades
 
-   Ficou combinado que upload/evidencia sera feito depois.
+   O upload real para Azure Blob ja existe na conclusao da Activity. O backend
+   recebe approvalFile via multipart/form-data, salva o arquivo no container
+   configurado e persiste metadados com link SAS.
 
-   Quando voltar nesse ponto, precisa decidir/implementar:
+   Ainda falta:
 
-   - evidencia e obrigatoria para concluir?
-   - evidencia e obrigatoria para reprovar/bloquear?
-   - onde armazenar arquivo: Azure Blob?
-   - quais metadados guardar no banco?
-   - o backend deve recusar conclusao sem evidencia?
-   - o backend deve recusar bloqueio/reprovacao sem evidencia?
+   - validar tamanho conforme configuracao do projeto;
+   - decidir se bloqueio/reprovacao tambem exigira evidencia obrigatoria.
 
 
-3. Importacao em massa de atividades
-
-   Ficou fora deste fechamento.
-
-   Quando implementar CSV/Excel, manter a regra combinada:
-
-   - Activity.id continua sendo global e sequencial;
-   - codigo_visivel sempre deriva do id real;
-   - o arquivo pode ter um codigo temporario interno, por exemplo 1, 2, 3;
-   - durante a importacao, o backend mapeia codigo temporario -> Activity.id
-     real;
-   - predecessores do arquivo devem ser resolvidos a partir desse mapa;
-   - cada linha importada precisa validar projeto, NoHierarquia, tester/dev e
-     predecessoras antes de criar.
-
-
-4. Exportacao/auditoria de atividades
+3. Exportacao/auditoria de atividades
 
    Ainda falta uma rota/fluxo backend para exportacao auditavel de atividades.
 
