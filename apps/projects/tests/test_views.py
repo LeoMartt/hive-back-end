@@ -1,4 +1,6 @@
 from uuid import uuid4
+from io import BytesIO
+from zipfile import ZipFile
 
 from django.urls import reverse
 from django.utils import timezone
@@ -6,6 +8,7 @@ from django.utils.dateparse import parse_datetime
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import Usuario
+from apps.activities.models import Activity
 
 from ..models import Membership, NoHierarquia, Papel, Project
 
@@ -355,6 +358,64 @@ class ProjectListViewTests(APITestCase):
         self.assertEqual(response.status_code, 403)
         self.crm.refresh_from_db()
         self.assertTrue(self.crm.ativo)
+
+    def test_usuario_do_projeto_baixa_zip_de_auditoria(self):
+        self.client.force_authenticate(user=self.gestor)
+        no = NoHierarquia.objects.create(
+            projeto=self.crm,
+            nivel=NoHierarquia.Nivel.NIVEL_1,
+            nome="Fiscal",
+        )
+        processo = NoHierarquia.objects.create(
+            projeto=self.crm,
+            parent=no,
+            nivel=NoHierarquia.Nivel.NIVEL_2,
+            nome="Emissao",
+        )
+        activity = Activity.objects.create(
+            projeto=self.crm,
+            no=processo,
+            nome="Validar NF-e",
+            tester=self.gestor,
+            desenvolvedor=self.gestor,
+            data_inicio_planejada="2026-10-01",
+            data_conclusao_planejada="2026-10-02",
+            evidencia_aprovacao={
+                "fileName": "evidencia.pdf",
+                "uploadedBy": "Gestor Um",
+                "url": "https://storage.example.com/evidencia.pdf?sig=abc",
+                "urlExpiresAt": "2027-03-01T10:00:00+00:00",
+            },
+        )
+
+        response = self.client.get(reverse("projects:audit-export", kwargs={"project_id": self.crm.id}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/zip")
+        with ZipFile(BytesIO(response.content)) as archive:
+            names = archive.namelist()
+            docx_name = next(name for name in names if name.endswith(f"{activity.codigo_visivel}_Validar_NF-e.docx"))
+            with ZipFile(BytesIO(archive.read(docx_name))) as docx:
+                docx_xml = "\n".join(
+                    docx.read(name).decode("utf-8")
+                    for name in docx.namelist()
+                    if name.startswith("word/") and name.endswith(".xml")
+                )
+                document_xml = docx.read("word/document.xml").decode("utf-8")
+                document_rels = docx.read("word/_rels/document.xml.rels").decode("utf-8")
+        self.assertTrue(any(name.endswith(f"{activity.codigo_visivel}_Validar_NF-e.docx") for name in names))
+        self.assertFalse(any(name.endswith(".txt") for name in names))
+        self.assertNotIn("{{", docx_xml)
+        self.assertNotIn("Issues vinculadas", docx_xml)
+        self.assertNotIn("Checklist de auditoria", docx_xml)
+        self.assertNotIn("Metadados do pacote", docx_xml)
+        self.assertNotIn("Historico de status", docx_xml)
+        self.assertIn(activity.codigo_visivel, docx_xml)
+        self.assertIn("Validar NF-e", docx_xml)
+        self.assertIn("<w:hyperlink", document_xml)
+        self.assertIn("TargetMode=\"External\"", document_rels)
+        self.assertIn("https://storage.example.com/evidencia.pdf?sig=abc", document_rels)
+        self.assertIn("01/03/2027 07:00", docx_xml)
 
     def test_lista_papeis(self):
         self.client.force_authenticate(user=self.gestor)
