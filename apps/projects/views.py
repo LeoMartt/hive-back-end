@@ -1,3 +1,4 @@
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.generics import ListAPIView
@@ -6,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Membership, NoHierarquia, Papel, Project
+from .audit_export import gerar_zip_auditoria_projeto
 from .serializers import (
     MembershipSerializer,
     NoHierarquiaSerializer,
@@ -97,6 +99,15 @@ class ProjectDetailView(ProjectQuerysetMixin, APIView):
         exigir_gestor(request.user, project)
         desativar_projeto(projeto=project)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ProjectAuditExportView(ProjectQuerysetMixin, APIView):
+    def get(self, request, project_id):
+        project = self.get_project(project_id)
+        content = gerar_zip_auditoria_projeto(project, generated_by=request.user)
+        response = HttpResponse(content, content_type="application/zip")
+        response["Content-Disposition"] = f'attachment; filename="hive_auditoria_{project.id}.zip"'
+        return response
 
 
 class PapelListView(ListAPIView):

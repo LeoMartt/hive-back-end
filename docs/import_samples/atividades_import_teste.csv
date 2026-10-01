@@ -1,0 +1,6 @@
+﻿Modulo;Processo;Atividade nome;Tester email;Dev email;Data inicio planejado;Data final planejada;Id lista sequencial (temporario);Predecessores;Sistema;Area;Transação;Resultado Esperado;Observações
+Faturamento;Emissão de NF-e;Validar cálculo de ICMS na emissão;47693@eep.br;47693@eep.br;01/10/2026;02/10/2026;1;;SAP ECC;Fiscal;J1B1N;NF-e emitida com cálculo de ICMS correto;Atividade base sem predecessor
+Faturamento;Emissão de NF-e;Testar emissão em lote de notas fiscais;47693@eep.br;47693@eep.br;03/10/2026;04/10/2026;2;1;SAP ECC;Fiscal;J1B3N;Lote de notas fiscais emitido sem rejeição;Depende da validação do cálculo
+Faturamento;Emissão de NF-e;Validar cancelamento de NF-e autorizada;47693@eep.br;47693@eep.br;05/10/2026;06/10/2026;3;1;SAP ECC;Fiscal;J1B2N;Cancelamento registrado e refletido no status da nota;
+Faturamento;Emissão de NF-e;Conferir integração contábil da nota fiscal;47693@eep.br;47693@eep.br;07/10/2026;08/10/2026;4;"2;3";SAP ECC;Contabilidade;FB03;Documento contábil gerado com valores corretos;Testa múltiplos predecessores
+Faturamento;Emissão de NF-e;Validar relatório final de documentos fiscais;47693@eep.br;47693@eep.br;09/10/2026;10/10/2026;5;4;SAP ECC;Fiscal;ZREL_NFE;Relatório exibe todas as notas emitidas e canceladas;Atividade final da cadeia

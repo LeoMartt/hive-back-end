@@ -6,6 +6,7 @@ from .views import (
     NoHierarquiaCollectionView,
     NoHierarquiaDetailView,
     PapelListView,
+    ProjectAuditExportView,
     ProjectCollectionView,
     ProjectDetailView,
 )
@@ -16,6 +17,7 @@ urlpatterns = [
     path("", ProjectCollectionView.as_view(), name="list"),
     path("roles/", PapelListView.as_view(), name="roles-list"),
     path("<uuid:project_id>/", ProjectDetailView.as_view(), name="detail"),
+    path("<uuid:project_id>/audit-export/", ProjectAuditExportView.as_view(), name="audit-export"),
     path("<uuid:project_id>/hierarchy/", NoHierarquiaCollectionView.as_view(), name="hierarchy-list"),
     path(
         "<uuid:project_id>/hierarchy/<uuid:node_id>/",
