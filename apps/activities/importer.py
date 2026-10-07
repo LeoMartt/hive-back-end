@@ -14,7 +14,7 @@ from apps.accounts.models import Usuario
 from apps.projects.models import Membership, NoHierarquia, Papel, Project
 
 from .models import Activity, ActivityPredecessor
-from .services import salvar_activity
+from .services import obter_ou_criar_modulo, obter_ou_criar_processo, salvar_activity
 
 
 HEADER_MAP = {
@@ -183,30 +183,20 @@ def _resolve_user_by_email(project: Project, email: str, role: str, line: int, f
 
 
 def _resolve_node(project: Project, module: str, process: str, line: int) -> NoHierarquia:
-    module_node = NoHierarquia.objects.filter(
-        projeto=project,
-        nivel=NoHierarquia.Nivel.NIVEL_1,
-        nome__iexact=module,
-    ).first()
-    if not module_node:
-        raise DRFValidationError({"rows": [f"Linha {line}: módulo não encontrado: {module}."]})
+    try:
+        module_node = obter_ou_criar_modulo(project, module)
+    except DRFValidationError as exc:
+        raise DRFValidationError({"rows": [f"Linha {line}: módulo inválido: {module}."]}) from exc
 
     if project.modo == Project.Modo.CUTOVER:
         return module_node
 
     if not process:
         raise DRFValidationError({"rows": [f"Linha {line}: processo é obrigatório para projeto UAT."]})
-    process_node = NoHierarquia.objects.filter(
-        projeto=project,
-        parent=module_node,
-        nivel=NoHierarquia.Nivel.NIVEL_2,
-        nome__iexact=process,
-    ).first()
-    if not process_node:
-        raise DRFValidationError(
-            {"rows": [f"Linha {line}: processo não encontrado em {module}: {process}."]}
-        )
-    return process_node
+    try:
+        return obter_ou_criar_processo(project, module_node, process)
+    except DRFValidationError as exc:
+        raise DRFValidationError({"rows": [f"Linha {line}: processo inválido em {module}: {process}."]}) from exc
 
 
 def _validate_row(project: Project, normalized: dict[str, Any], line: int) -> ImportedActivityRow:

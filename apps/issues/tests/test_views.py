@@ -266,7 +266,7 @@ class IssueViewTests(APITestCase):
         self.assertIsNotNone(issue.analise_iniciada_em)
 
     def test_dev_propoe_solucao(self):
-        activity = self.criar_activity()
+        activity = self.criar_activity(status=Activity.Status.BLOQUEADO)
         issue = Issue.objects.create(
             projeto=self.project,
             atividade=activity,
@@ -289,8 +289,10 @@ class IssueViewTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         issue.refresh_from_db()
+        activity.refresh_from_db()
         self.assertEqual(issue.status, Issue.Status.SOLUCAO_PROPOSTA)
         self.assertEqual(issue.solucao_proposta, "Ajustado cálculo de ICMS.")
+        self.assertEqual(activity.status, Activity.Status.LIBERADO)
 
     @patch("apps.issues.services.upload_evidencia")
     def test_dev_propoe_solucao_com_upload_real_de_evidencia(self, upload_evidencia):
@@ -396,7 +398,7 @@ class IssueViewTests(APITestCase):
         self.assertEqual(issue.status, Issue.Status.CONCLUIDA)
         self.assertEqual(activity.status, Activity.Status.LIBERADO)
 
-    def test_resolve_issue_nao_libera_activity_com_outra_issue_aberta(self):
+    def test_resolve_issue_nao_libera_activity_com_outra_issue_impeditiva_aberta(self):
         activity = self.criar_activity(status=Activity.Status.BLOQUEADO)
         issue = Issue.objects.create(
             projeto=self.project,
@@ -417,7 +419,7 @@ class IssueViewTests(APITestCase):
             descricao="Ainda aberto.",
             tipo=Issue.Tipo.DADOS,
             impacto=Issue.Impacto.MEDIO,
-            impeditiva=False,
+            impeditiva=True,
             tester=self.tester,
             desenvolvedor=self.dev,
             status=Issue.Status.ABERTA,
@@ -431,6 +433,56 @@ class IssueViewTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         activity.refresh_from_db()
         self.assertEqual(activity.status, Activity.Status.BLOQUEADO)
+
+    def test_cancelar_issue_exige_em_analise(self):
+        activity = self.criar_activity(status=Activity.Status.BLOQUEADO)
+        issue = Issue.objects.create(
+            projeto=self.project,
+            atividade=activity,
+            titulo="Erro fiscal",
+            descricao="Falhou.",
+            tipo=Issue.Tipo.REQUISITO,
+            impacto=Issue.Impacto.ALTO,
+            impeditiva=True,
+            tester=self.tester,
+            desenvolvedor=self.dev,
+            status=Issue.Status.SOLUCAO_PROPOSTA,
+        )
+        self.client.force_authenticate(user=self.dev)
+
+        response = self.client.post(
+            reverse("issues:cancel", kwargs={"project_id": self.project.id, "issue_id": issue.id})
+        )
+
+        self.assertEqual(response.status_code, 400)
+        issue.refresh_from_db()
+        self.assertEqual(issue.status, Issue.Status.SOLUCAO_PROPOSTA)
+
+    def test_dev_cancela_issue_em_analise_e_libera_activity(self):
+        activity = self.criar_activity(status=Activity.Status.BLOQUEADO)
+        issue = Issue.objects.create(
+            projeto=self.project,
+            atividade=activity,
+            titulo="Erro fiscal",
+            descricao="Falhou.",
+            tipo=Issue.Tipo.REQUISITO,
+            impacto=Issue.Impacto.ALTO,
+            impeditiva=True,
+            tester=self.tester,
+            desenvolvedor=self.dev,
+            status=Issue.Status.EM_ANALISE,
+        )
+        self.client.force_authenticate(user=self.dev)
+
+        response = self.client.post(
+            reverse("issues:cancel", kwargs={"project_id": self.project.id, "issue_id": issue.id})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        issue.refresh_from_db()
+        activity.refresh_from_db()
+        self.assertEqual(issue.status, Issue.Status.CANCELADA)
+        self.assertEqual(activity.status, Activity.Status.LIBERADO)
 
     def test_resolve_issue_respeita_predecessora_pendente(self):
         predecessor = self.criar_activity(status=Activity.Status.LIBERADO)

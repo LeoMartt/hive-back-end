@@ -7,8 +7,6 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.projects.models import Project
-from apps.projects.services import exigir_gestor
-
 from .models import Issue
 from .serializers import IssueCreateSerializer, IssueProposeSolutionSerializer, IssueSerializer
 from .services import cancelar_issue, concluir_issue, criar_issue, iniciar_analise_issue, propor_solucao_issue
@@ -139,7 +137,6 @@ class IssueResolveView(IssueQuerysetMixin, APIView):
 class IssueCancelView(IssueQuerysetMixin, APIView):
     def post(self, request, project_id, issue_id):
         project = self.visible_project(project_id)
-        exigir_gestor(request.user, project)
         issue = self.get_issue(project, issue_id)
-        issue = cancelar_issue(issue=issue)
+        issue = cancelar_issue(issue=issue, usuario=request.user)
         return Response(IssueSerializer(issue).data)

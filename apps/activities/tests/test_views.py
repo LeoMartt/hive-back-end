@@ -115,6 +115,30 @@ class ActivityViewTests(APITestCase):
         self.assertEqual(response.data["dev"], "Dev Um")
         self.assertEqual(response.data["status"], "liberado")
 
+    def test_gestor_cria_activity_com_modulo_e_processo_novos(self):
+        self.client.force_authenticate(user=self.gestor)
+
+        response = self.client.post(
+            reverse("activities:list", kwargs={"project_id": self.project.id}),
+            {
+                "module": "Cargas",
+                "process": "Integração bancária",
+                "name": "Validar remessa CNAB",
+                "testerId": str(self.tester.id),
+                "developerId": str(self.dev.id),
+                "plannedStart": "2026-09-01",
+                "plannedEnd": "2026-09-05",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        activity = Activity.objects.get(nome="Validar remessa CNAB")
+        self.assertEqual(activity.no.nome, "Integração bancária")
+        self.assertEqual(activity.no.parent.nome, "Cargas")
+        self.assertEqual(response.data["module"], "Cargas")
+        self.assertEqual(response.data["process"], "Integração bancária")
+
     def test_activity_com_predecessora_nasce_aguardando(self):
         predecessor = Activity.objects.create(
             projeto=self.project,
@@ -182,6 +206,33 @@ class ActivityViewTests(APITestCase):
         self.assertEqual(first.sistema, "SAP")
         self.assertTrue(ActivityPredecessor.objects.filter(atividade=second, predecessora=first).exists())
         self.assertEqual(response.data["activities"][1]["predecessors"], [first.codigo_visivel])
+
+    def test_import_csv_cria_modulo_e_processo_inexistentes(self):
+        self.client.force_authenticate(user=self.gestor)
+        content = (
+            "Modulo,Processo,Atividade nome,Tester email,Dev email,Data inicio planejado,"
+            "Data final planejada,Id lista sequencial (temporario),Predecessores\n"
+            "Cargas,Integração bancária,Validar remessa CNAB,tester@fumep.edu.br,dev@fumep.edu.br,"
+            "01/09/2026,02/09/2026,1,\n"
+        )
+        uploaded = SimpleUploadedFile(
+            "atividades.csv",
+            content.encode("utf-8"),
+            content_type="text/csv",
+        )
+
+        response = self.client.post(
+            reverse("activities:import", kwargs={"project_id": self.project.id}),
+            {"file": uploaded},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        activity = Activity.objects.get(nome="Validar remessa CNAB")
+        self.assertEqual(activity.no.nome, "Integração bancária")
+        self.assertEqual(activity.no.parent.nome, "Cargas")
+        self.assertEqual(response.data["activities"][0]["module"], "Cargas")
+        self.assertEqual(response.data["activities"][0]["process"], "Integração bancária")
 
     def test_import_csv_com_erro_nao_cria_nada(self):
         self.client.force_authenticate(user=self.gestor)

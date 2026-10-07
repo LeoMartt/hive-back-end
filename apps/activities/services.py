@@ -60,6 +60,78 @@ def validar_no_para_activity(projeto: Project, no: NoHierarquia) -> None:
         raise DRFValidationError({"nodeId": "Atividades Cutover devem apontar para nó de nível 1."})
 
 
+def _salvar_no_hierarquia(no: NoHierarquia) -> NoHierarquia:
+    try:
+        no.full_clean()
+        no.save()
+    except ValidationError as exc:
+        raise DRFValidationError(exc.message_dict) from exc
+    except IntegrityError as exc:
+        raise DRFValidationError({"nodeId": "Não foi possível salvar o nó de hierarquia."}) from exc
+    return no
+
+
+def obter_ou_criar_modulo(projeto: Project, nome: str) -> NoHierarquia:
+    nome = nome.strip()
+    if not nome:
+        raise DRFValidationError({"module": "Módulo é obrigatório."})
+    modulo = NoHierarquia.objects.filter(
+        projeto=projeto,
+        nivel=NoHierarquia.Nivel.NIVEL_1,
+        nome__iexact=nome,
+    ).first()
+    if modulo:
+        return modulo
+    return _salvar_no_hierarquia(
+        NoHierarquia(
+            projeto=projeto,
+            nivel=NoHierarquia.Nivel.NIVEL_1,
+            nome=nome,
+        )
+    )
+
+
+def obter_ou_criar_processo(projeto: Project, modulo: NoHierarquia, nome: str) -> NoHierarquia:
+    nome = nome.strip()
+    if not nome:
+        raise DRFValidationError({"process": "Processo é obrigatório para projeto UAT."})
+    processo = NoHierarquia.objects.filter(
+        projeto=projeto,
+        parent=modulo,
+        nivel=NoHierarquia.Nivel.NIVEL_2,
+        nome__iexact=nome,
+    ).first()
+    if processo:
+        return processo
+    return _salvar_no_hierarquia(
+        NoHierarquia(
+            projeto=projeto,
+            parent=modulo,
+            nivel=NoHierarquia.Nivel.NIVEL_2,
+            nome=nome,
+        )
+    )
+
+
+def resolver_no_para_activity(projeto: Project, dados: dict) -> NoHierarquia:
+    node_id = dados.get("nodeId")
+    if node_id:
+        no = NoHierarquia.objects.filter(id=node_id, projeto=projeto).first()
+        if not no:
+            raise DRFValidationError({"nodeId": "Nó de hierarquia não encontrado."})
+        validar_no_para_activity(projeto, no)
+        return no
+
+    modulo = obter_ou_criar_modulo(projeto, dados.get("module") or "")
+    if projeto.modo == Project.Modo.CUTOVER:
+        validar_no_para_activity(projeto, modulo)
+        return modulo
+
+    processo = obter_ou_criar_processo(projeto, modulo, dados.get("process") or "")
+    validar_no_para_activity(projeto, processo)
+    return processo
+
+
 def validar_predecessoras(projeto: Project, predecessor_ids: list[int]) -> list[Activity]:
     if not predecessor_ids:
         return []
@@ -108,10 +180,7 @@ def salvar_activity(activity: Activity) -> Activity:
 
 @transaction.atomic
 def criar_activity(*, projeto: Project, dados: dict) -> Activity:
-    no = NoHierarquia.objects.filter(id=dados["nodeId"], projeto=projeto).first()
-    if not no:
-        raise DRFValidationError({"nodeId": "Nó de hierarquia não encontrado."})
-    validar_no_para_activity(projeto, no)
+    no = resolver_no_para_activity(projeto, dados)
 
     tester = resolver_usuario_por_identificador(dados["testerId"], "testerId")
     exigir_membership_com_papel(tester, projeto, Papel.Codigo.TESTER, "testerId")
