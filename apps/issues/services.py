@@ -21,6 +21,11 @@ STATUS_ABERTOS = [
     Issue.Status.SOLUCAO_PROPOSTA,
 ]
 
+STATUS_BLOQUEADORES_DA_ACTIVITY = [
+    Issue.Status.ABERTA,
+    Issue.Status.EM_ANALISE,
+]
+
 
 def nome_usuario(usuario: Usuario) -> str:
     return usuario.first_name or usuario.username or usuario.email
@@ -52,6 +57,12 @@ def exigir_dev_da_issue(user: Usuario, issue: Issue) -> None:
     if usuario_pode_desenvolver_issue(user, issue):
         return
     raise PermissionDenied("Apenas o desenvolvedor responsável pode executar esta ação.")
+
+
+def exigir_dev_da_issue_ou_gestor(user: Usuario, issue: Issue) -> None:
+    if usuario_pode_gerenciar_projeto(user, issue.projeto):
+        return
+    exigir_dev_da_issue(user, issue)
 
 
 def resolver_desenvolvedor(projeto: Project, dados: dict) -> Usuario:
@@ -90,6 +101,15 @@ def bloquear_activity_por_issue_impeditiva(activity: Activity) -> None:
         raise ValidationError({"relatedActivityId": "Atividade concluída ou cancelada não pode ser bloqueada por issue."})
     activity.status = Activity.Status.BLOQUEADO
     activity.numero_retest += 1
+    salvar_activity(activity)
+
+
+def liberar_activity_se_sem_issues_bloqueadoras(activity: Activity) -> None:
+    if activity.status != Activity.Status.BLOQUEADO:
+        return
+    if activity.issues.filter(impeditiva=True, status__in=STATUS_BLOQUEADORES_DA_ACTIVITY).exists():
+        return
+    activity.status = status_liberado_por_predecessoras(list(activity.predecessoras.all()))
     salvar_activity(activity)
 
 
@@ -167,11 +187,13 @@ def propor_solucao_issue(*, issue: Issue, usuario: Usuario, dados: dict, solutio
             "atualizada_em",
         ]
     )
+    if issue.impeditiva:
+        liberar_activity_se_sem_issues_bloqueadoras(issue.atividade)
     return issue
 
 
 def atividade_tem_issues_abertas(activity: Activity) -> bool:
-    return activity.issues.filter(status__in=STATUS_ABERTOS).exists()
+    return activity.issues.filter(impeditiva=True, status__in=STATUS_BLOQUEADORES_DA_ACTIVITY).exists()
 
 
 @transaction.atomic
@@ -184,21 +206,22 @@ def concluir_issue(*, issue: Issue, usuario: Usuario) -> Issue:
     issue.resolvida_em = timezone.now()
     issue.save(update_fields=["status", "resolvida_em", "atualizada_em"])
 
-    activity = issue.atividade
-    if activity.status == Activity.Status.BLOQUEADO and not atividade_tem_issues_abertas(activity):
-        activity.status = status_liberado_por_predecessoras(list(activity.predecessoras.all()))
-        salvar_activity(activity)
+    if issue.impeditiva:
+        liberar_activity_se_sem_issues_bloqueadoras(issue.atividade)
 
     return issue
 
 
 @transaction.atomic
-def cancelar_issue(*, issue: Issue) -> Issue:
-    if issue.status in [Issue.Status.CONCLUIDA, Issue.Status.CANCELADA]:
-        return issue
+def cancelar_issue(*, issue: Issue, usuario: Usuario) -> Issue:
+    exigir_dev_da_issue_ou_gestor(usuario, issue)
+    if issue.status != Issue.Status.EM_ANALISE:
+        raise ValidationError({"status": "Somente issue em análise pode ser cancelada."})
     issue.status = Issue.Status.CANCELADA
     issue.resolvida_em = timezone.now()
     issue.save(update_fields=["status", "resolvida_em", "atualizada_em"])
+    if issue.impeditiva:
+        liberar_activity_se_sem_issues_bloqueadoras(issue.atividade)
     return issue
 
 

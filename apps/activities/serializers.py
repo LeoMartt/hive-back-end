@@ -136,6 +136,8 @@ class ActivitySerializer(serializers.ModelSerializer):
 
 class ActivityWriteSerializer(serializers.Serializer):
     nodeId = serializers.UUIDField(required=False)
+    module = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    process = serializers.CharField(max_length=100, required=False, allow_blank=True)
     name = serializers.CharField(max_length=200, required=False)
     testerId = serializers.UUIDField(required=False)
     developerId = serializers.UUIDField(required=False)
@@ -159,13 +161,13 @@ class ActivityWriteSerializer(serializers.Serializer):
     notes = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     def validate(self, attrs: dict) -> dict:
+        project = self.context["project"]
         if "predecessors" in attrs and "predecessorIds" in attrs:
             raise serializers.ValidationError(
                 {"predecessors": "Use predecessorIds ou predecessors, não ambos."}
             )
 
         if "predecessors" in attrs:
-            project = self.context["project"]
             attrs["predecessorIds"] = [
                 resolver_activity_por_codigo(codigo, project).id for codigo in attrs.pop("predecessors")
             ]
@@ -180,11 +182,15 @@ class ActivityWriteSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {"plannedEnd": "Conclusão planejada deve ser maior ou igual ao início."}
             )
+        if instance is None and not attrs.get("nodeId"):
+            if not (attrs.get("module") or "").strip():
+                raise serializers.ValidationError({"module": "Informe um módulo ou selecione um nó existente."})
+            if project.modo == project.Modo.UAT and not (attrs.get("process") or "").strip():
+                raise serializers.ValidationError({"process": "Processo é obrigatório para projeto UAT."})
         return attrs
 
 
 class ActivityCreateSerializer(ActivityWriteSerializer):
-    nodeId = serializers.UUIDField()
     name = serializers.CharField(max_length=200)
     testerId = serializers.UUIDField()
     developerId = serializers.UUIDField()
