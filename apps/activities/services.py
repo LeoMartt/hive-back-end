@@ -167,8 +167,17 @@ def liberar_dependentes(activity: Activity) -> None:
             salvar_activity(dependente)
 
 
+@transaction.atomic
 def salvar_activity(activity: Activity) -> Activity:
     try:
+        anterior = Activity.objects.select_for_update().filter(pk=activity.pk).first() if activity.pk else None
+        if anterior:
+            activity.historico_status = list(anterior.historico_status)
+            if anterior.status != activity.status:
+                activity.historico_status.append({
+                    "at": timezone.now().isoformat(),
+                    "text": f"{Activity.Status(anterior.status).label} → {Activity.Status(activity.status).label}",
+                })
         activity.full_clean()
         activity.save()
     except ValidationError as exc:

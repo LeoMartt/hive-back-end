@@ -250,7 +250,7 @@ class ProjectListViewTests(APITestCase):
         response = self.client.post(self.url, payload, format="json")
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("nome", response.data)
+        self.assertIn("name", response.data)
 
     def test_cria_projeto_com_mesmo_nome_em_modo_diferente(self):
         self.client.force_authenticate(user=self.gestor)

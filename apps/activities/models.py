@@ -52,6 +52,7 @@ class Activity(models.Model):
     observacoes = models.TextField(blank=True, default="")
     observacao_aprovacao = models.TextField(blank=True, default="")
     evidencia_aprovacao = models.JSONField(null=True, blank=True)
+    historico_status = models.JSONField(default=list, blank=True)
     predecessoras = models.ManyToManyField(
         "self",
         through="ActivityPredecessor",

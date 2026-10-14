@@ -137,6 +137,8 @@ SPI = Σ(% das atividades ativas) / (qtd atividades não canceladas
 Atividades canceladas ficam fora do numerador e do denominador. Atividades com data planejada futura não entram no denominador. SPI é recalculado dinamicamente a cada acesso ao dashboard — não é persistido; histórico é reconstruído via trilha de auditoria.
 
 ### Trilha de auditoria
+Implementacao atual (2026-10-14): `Activity.historico_status` persiste as mudancas de status em `salvar_activity`, dentro de transacao com bloqueio da linha. A API entrega `auditTrail` com data/hora e texto da transicao. Inclui a liberacao automatica por solucao de issue e por predecessoras. O app generico `audit` abaixo continua planejado; ainda nao existe.
+
 Tabela genérica: `entidade | status_anterior | status_novo | data_hora | usuario`. Alimentada por `activities` e `issues` a cada transição relevante, sempre via `apps/audit/services.py`. Base para Curva S e tempo médio de resolução.
 
 ## Autenticação

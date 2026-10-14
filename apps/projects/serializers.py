@@ -137,8 +137,15 @@ class ProjectCreateSerializer(serializers.Serializer):
     team = TeamMemberInputSerializer(many=True, required=False)
 
     def validate(self, attrs: dict) -> dict:
+        name = attrs["name"].strip()
         mode = attrs["mode"].lower()
         levels = [level.strip() for level in attrs["hierarchyLevels"] if level.strip()]
+
+        modo_model = Project.Modo(mode.upper())
+        if Project.objects.filter(nome__iexact=name, modo=modo_model, ativo=True).exists():
+            raise serializers.ValidationError(
+                {"name": "Já existe projeto ativo com este nome e modo."}
+            )
 
         if mode == "uat" and len(levels) != 2:
             raise serializers.ValidationError(
@@ -149,6 +156,7 @@ class ProjectCreateSerializer(serializers.Serializer):
                 {"hierarchyLevels": "Projetos Cutover exigem exatamente um nível."}
             )
 
+        attrs["name"] = name
         attrs["mode"] = mode
         attrs["hierarchyLevels"] = levels
         return attrs

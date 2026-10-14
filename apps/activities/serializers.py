@@ -47,6 +47,7 @@ class ActivitySerializer(serializers.ModelSerializer):
     rejectedAt = serializers.SerializerMethodField()
     createdAt = serializers.DateTimeField(source="criado_em", read_only=True)
     updatedAt = serializers.DateTimeField(source="atualizado_em", read_only=True)
+    auditTrail = serializers.JSONField(source="historico_status", read_only=True)
 
     class Meta:
         model = Activity
@@ -82,6 +83,7 @@ class ActivitySerializer(serializers.ModelSerializer):
             "rejectedAt",
             "createdAt",
             "updatedAt",
+            "auditTrail",
         ]
 
     def get_id(self, activity: Activity) -> str:
