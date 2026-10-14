@@ -206,6 +206,10 @@ def _validate_row(project: Project, normalized: dict[str, Any], line: int) -> Im
     if missing:
         raise DRFValidationError({"rows": [f"Linha {line}: campos obrigatórios ausentes: {', '.join(missing)}."]})
 
+    transaction_text = _clean(normalized.get("transaction"))
+    if len(transaction_text) > 1000:
+        raise DRFValidationError({"rows": [f"Linha {line}: Transação deve ter no máximo 1000 caracteres."]})
+
     temporary_id = _parse_int(normalized["temporary_id"], line, "Id lista sequencial")
     planned_start = _parse_date(normalized["planned_start"], line, "Data inicio planejado")
     planned_end = _parse_date(normalized["planned_end"], line, "Data final planejada")
@@ -245,7 +249,7 @@ def _validate_row(project: Project, normalized: dict[str, Any], line: int) -> Im
         predecessor_temporary_ids=predecessor_temporary_ids,
         area=_clean(normalized.get("area")),
         system=_clean(normalized.get("system")),
-        transaction=_clean(normalized.get("transaction")),
+        transaction=transaction_text,
         expected_result=_clean(normalized.get("expected_result")),
         notes=_clean(normalized.get("notes")),
     )

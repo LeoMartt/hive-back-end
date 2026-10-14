@@ -158,7 +158,7 @@ class ActivityWriteSerializer(serializers.Serializer):
     )
     area = serializers.CharField(max_length=100, required=False, allow_blank=True)
     system = serializers.CharField(max_length=100, required=False, allow_blank=True)
-    transaction = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    transaction = serializers.CharField(max_length=1000, required=False, allow_blank=True)
     expectedResult = serializers.CharField(required=False, allow_blank=True)
     notes = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
