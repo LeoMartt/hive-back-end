@@ -47,7 +47,7 @@ class Activity(models.Model):
     numero_retest = models.IntegerField(default=0)
     area = models.CharField(max_length=100, blank=True, default="")
     sistema = models.CharField(max_length=100, blank=True, default="")
-    transacao = models.CharField(max_length=50, blank=True, default="")
+    transacao = models.CharField(max_length=1000, blank=True, default="")
     resultado_esperado = models.TextField(blank=True, default="")
     observacoes = models.TextField(blank=True, default="")
     observacao_aprovacao = models.TextField(blank=True, default="")
