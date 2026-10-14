@@ -132,6 +132,23 @@ class IssueViewTests(APITestCase):
         self.assertEqual(response.data["relatedActivityId"], activity.codigo_visivel)
         self.assertEqual(response.data["status"], "aberta")
 
+    def test_gestor_cria_issue_vinculada_a_activity(self):
+        activity = self.criar_activity()
+        self.client.force_authenticate(user=self.gestor)
+
+        response = self.client.post(
+            reverse("issues:list", kwargs={"project_id": self.project.id}),
+            self.payload_issue(activity),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        issue = Issue.objects.get()
+        activity.refresh_from_db()
+        self.assertEqual(issue.atividade, activity)
+        self.assertEqual(issue.tester, self.gestor)
+        self.assertEqual(activity.status, Activity.Status.BLOQUEADO)
+
     @patch("apps.issues.services.upload_evidencia")
     def test_tester_cria_issue_com_upload_real_de_evidencia(self, upload_evidencia):
         upload_evidencia.return_value = {
@@ -293,6 +310,8 @@ class IssueViewTests(APITestCase):
         self.assertEqual(issue.status, Issue.Status.SOLUCAO_PROPOSTA)
         self.assertEqual(issue.solucao_proposta, "Ajustado cálculo de ICMS.")
         self.assertEqual(activity.status, Activity.Status.LIBERADO)
+        self.assertIsNotNone(response.data["solutionProposedAt"])
+        self.assertEqual(activity.historico_status[-1]["text"], "Bloqueado → Liberado")
 
     @patch("apps.issues.services.upload_evidencia")
     def test_dev_propoe_solucao_com_upload_real_de_evidencia(self, upload_evidencia):

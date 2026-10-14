@@ -47,10 +47,12 @@ def exigir_tester_da_activity_ou_gestor(user: Usuario, activity: Activity) -> No
     raise PermissionDenied("Apenas gestores ou o tester da atividade podem executar esta ação.")
 
 
-def exigir_tester_da_activity(user: Usuario, activity: Activity) -> None:
+def exigir_tester_da_activity_ou_gestor_para_criar_issue(user: Usuario, activity: Activity) -> None:
+    if usuario_pode_gerenciar_projeto(user, activity.projeto):
+        return
     if usuario_pode_testar_activity(user, activity):
         return
-    raise PermissionDenied("Apenas o tester da atividade pode criar issue.")
+    raise PermissionDenied("Apenas gestores ou o tester da atividade podem criar issue.")
 
 
 def exigir_dev_da_issue(user: Usuario, issue: Issue) -> None:
@@ -121,7 +123,7 @@ def criar_issue(*, projeto: Project, usuario: Usuario, dados: dict, opening_file
     if activity.status in [Activity.Status.CANCELADO, Activity.Status.CONCLUIDO]:
         raise ValidationError({"relatedActivityId": "Atividade concluída ou cancelada não pode receber issue."})
 
-    exigir_tester_da_activity(usuario, activity)
+    exigir_tester_da_activity_ou_gestor_para_criar_issue(usuario, activity)
     desenvolvedor = resolver_desenvolvedor(projeto, dados)
 
     issue = Issue.objects.create(
