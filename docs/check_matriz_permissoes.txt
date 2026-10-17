@@ -1,0 +1,58 @@
+CHECAGEM DA MATRIZ DE PERMISSOES - 16/10/2026
+
+Escopo: front e API, em UAT e Cutover. Papeis multiplos acumulam
+permissoes dentro do projeto; ser gestor em outro projeto nao concede
+permissao de gestao neste projeto. Administradores Django mantem o
+acesso administrativo ja existente no backend.
+
+1. Criar projeto: deixado fora desta alteracao por pedido do usuario.
+   A equipe tratara a liberacao manualmente no Django. Nao foi criada
+   uma nova regra global nem alterada a autorizacao atual dessa rota.
+
+2. Configurar hierarquia e nomes dos niveis: somente Gestor na API.
+   A pagina Estrutura continua fora do menu, como solicitado.
+
+3. Importar atividades em massa: somente Gestor; botao e modal restritos.
+4. Cadastrar atividade individual: somente Gestor; botao e modal restritos.
+5. Cancelar atividade: somente Gestor, inclusive a selecao em massa.
+6. Editar atividade: API restrita a Gestor. O front atual nao oferece
+   um editor de atividade; nenhum editor novo foi adicionado nesta revisao.
+7. Editar atribuicoes/papeis: somente Gestor. Convite, edicao de papeis
+   e alteracao de equipe nao ficam disponiveis a Tester ou Dev.
+8. Editar campos do projeto: API restrita a Gestor.
+9. Configurar SPI, aging, anexos e regras: somente Gestor. Para Tester
+   e Dev, controles ficam desabilitados e botoes Salvar nao aparecem.
+   O front so indica sucesso depois de a API confirmar a gravacao.
+
+10. Iniciar execucao: nao existe transicao separada, conforme decisao
+    anterior de remover Em execucao e nao mudar status ao abrir a tela.
+    Essa transicao nao foi reintroduzida para reproduzir a matriz antiga.
+
+11. Aprovar individualmente/em lote: Gestor ou Tester responsavel.
+    Tester nao seleciona atividades de outro Tester para aprovar;
+    Dev nao recebe selecao nem botoes de aprovacao/cancelamento.
+12. Evidencia de conclusao da atividade: segue a mesma permissao de
+    aprovacao (Gestor ou Tester responsavel). O anexo da solucao de
+    issue continua no fluxo de proposta, para Gestor/Dev responsavel.
+13. Registrar issue: Gestor ou Tester responsavel pela atividade.
+    Na lista de issues, o formulario oferece apenas atividades permitidas.
+14. Analisar/propor solucao: Gestor ou Dev responsavel pela issue.
+    Cancelar issue continua limitado a Em analise; Solucao proposta nao
+    pode ser cancelada. Atribuicao antiga nao substitui papel removido.
+15. Visualizar atividades/issues: membros do projeto podem consultar.
+16. Visualizar indicadores: mantido para todos os membros; os dados
+    consumidos pelo painel seguem a visibilidade do projeto na API.
+
+Exportacoes existentes foram mantidas para todos os membros, conforme
+decisao anterior. Nao foram restringidas por esta revisao.
+
+Verificacao:
+- apps/projects/tests/test_permission_matrix.py cobre papeis isolados, multipapel,
+  responsaveis, nao responsaveis e usuario externo nos dois modos.
+- inclui testes de importacao, equipe, configuracoes, hierarquia,
+  cadastro/edicao/cancelamento/aprovacao de atividade e fluxo de issue.
+- inclui atribuicao remanescente apos remocao de papel.
+- QA no navegador com perfis simulados Gestor, Tester e Dev.
+- nenhuma migracao necessaria e nenhum dado do Azure alterado.
+- resultado final: suite completa do backend com 101 testes aprovada;
+  build e lint do frontend aprovados.

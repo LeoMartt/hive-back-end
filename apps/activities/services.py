@@ -141,19 +141,17 @@ def validar_predecessoras(projeto: Project, predecessor_ids: list[int]) -> list[
     ausentes = [activity_id for activity_id in predecessor_ids if activity_id not in encontrados]
     if ausentes:
         raise DRFValidationError({"predecessorIds": "Todas as predecessoras devem existir no mesmo projeto."})
-    if any(activity.status == Activity.Status.CANCELADO for activity in predecessoras):
-        raise DRFValidationError({"predecessorIds": "Atividade cancelada não pode ser predecessora."})
     return predecessoras
 
 
 def status_inicial(predecessoras: list[Activity]) -> str:
-    return Activity.Status.AGUARDANDO if predecessoras else Activity.Status.LIBERADO
+    return status_liberado_por_predecessoras(predecessoras)
 
 
 def status_liberado_por_predecessoras(predecessoras: list[Activity]) -> str:
     if not predecessoras:
         return Activity.Status.LIBERADO
-    if all(activity.status == Activity.Status.CONCLUIDO for activity in predecessoras):
+    if all(activity.status in [Activity.Status.CONCLUIDO, Activity.Status.CANCELADO] for activity in predecessoras):
         return Activity.Status.LIBERADO
     return Activity.Status.AGUARDANDO
 
@@ -162,7 +160,7 @@ def liberar_dependentes(activity: Activity) -> None:
     for dependente in activity.dependentes.filter(status=Activity.Status.AGUARDANDO).prefetch_related(
         "predecessoras",
     ):
-        if all(predecessora.status == Activity.Status.CONCLUIDO for predecessora in dependente.predecessoras.all()):
+        if status_liberado_por_predecessoras(list(dependente.predecessoras.all())) == Activity.Status.LIBERADO:
             dependente.status = Activity.Status.LIBERADO
             salvar_activity(dependente)
 
@@ -276,6 +274,7 @@ def atualizar_activity(*, activity: Activity, dados: dict) -> Activity:
 @transaction.atomic
 def cancelar_activity(*, activity: Activity) -> Activity:
     if activity.status == Activity.Status.CANCELADO:
+        liberar_dependentes(activity)
         return activity
     if activity.status == Activity.Status.CONCLUIDO:
         raise DRFValidationError({"status": "Atividade concluída não pode ser cancelada."})
@@ -285,6 +284,7 @@ def cancelar_activity(*, activity: Activity) -> Activity:
     from apps.issues.services import cancelar_issues_da_activity
 
     cancelar_issues_da_activity(activity)
+    liberar_dependentes(activity)
     return activity
 
 

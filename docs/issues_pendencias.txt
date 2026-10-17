@@ -1,7 +1,7 @@
 Pendencias da rota de issues
 ============================
 
-Atualizado em: 2026-09-14
+Atualizado em: 2026-10-16
 
 Escopo
 ------
@@ -30,8 +30,9 @@ O bloco de issues ja tem:
   - cancel no backend;
 - status validos: ABERTA, EM_ANALISE, SOLUCAO_PROPOSTA, CONCLUIDA e
   CANCELADA;
-- start-analysis manual, acionado por botao/rota, igual ao front;
-- propose-solution pelo desenvolvedor responsavel;
+- start-analysis manual, acionado por botao/rota pelo desenvolvedor
+  responsavel ou gestor do projeto, igual ao front;
+- propose-solution pelo desenvolvedor responsavel ou gestor do projeto;
 - resolve pelo tester da atividade ou gestor;
 - issue impeditiva bloqueia automaticamente apenas a Activity vinculada;
 - issue nao impeditiva nao altera o status da Activity;

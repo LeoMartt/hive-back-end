@@ -269,7 +269,7 @@ class ProjectListViewTests(APITestCase):
     def test_cria_projeto_cutover_rejeita_dois_niveis(self):
         self.client.force_authenticate(user=self.gestor)
         payload = {
-            "name": "ERP Cutover",
+            "name": "ERP Cutover com dois niveis",
             "description": "",
             "mode": "cutover",
             "hierarchyLevels": ["Módulo", "Cenário"],
