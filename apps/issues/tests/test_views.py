@@ -252,7 +252,7 @@ class IssueViewTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("openingAttachment", response.data)
 
-    def test_start_analysis_e_manual_e_apenas_dev_responsavel(self):
+    def test_start_analysis_e_manual_e_bloqueia_dev_nao_responsavel(self):
         activity = self.criar_activity()
         issue = Issue.objects.create(
             projeto=self.project,
@@ -281,6 +281,60 @@ class IssueViewTests(APITestCase):
         issue.refresh_from_db()
         self.assertEqual(issue.status, Issue.Status.EM_ANALISE)
         self.assertIsNotNone(issue.analise_iniciada_em)
+
+    def test_gestor_inicia_analise_e_propoe_solucao_em_uat_e_cutover(self):
+        for modo in (Project.Modo.UAT, Project.Modo.CUTOVER):
+            with self.subTest(modo=modo):
+                self.project.modo = modo
+                self.project.nivel2_nome = "Processo" if modo == Project.Modo.UAT else None
+                self.project.save(update_fields=["modo", "nivel2_nome"])
+                activity = self.criar_activity(status=Activity.Status.BLOQUEADO)
+                if modo == Project.Modo.CUTOVER:
+                    activity.no = self.raiz
+                    activity.save(update_fields=["no"])
+                issue = Issue.objects.create(
+                    projeto=self.project, atividade=activity, titulo="Erro fiscal",
+                    descricao="Falhou.", tipo=Issue.Tipo.REQUISITO,
+                    impacto=Issue.Impacto.ALTO, impeditiva=True,
+                    tester=self.tester, desenvolvedor=self.dev,
+                )
+                self.client.force_authenticate(user=self.gestor)
+                start_url = reverse("issues:start-analysis", kwargs={"project_id": self.project.id, "issue_id": issue.id})
+                solution_url = reverse("issues:propose-solution", kwargs={"project_id": self.project.id, "issue_id": issue.id})
+                self.assertEqual(self.client.post(solution_url, {"proposedSolution": "Correcao."}, format="json").status_code, 400)
+                self.assertEqual(self.client.post(start_url).status_code, 200)
+                response = self.client.post(solution_url, {"proposedSolution": "Correcao aplicada."}, format="json")
+                self.assertEqual(response.status_code, 200)
+                issue.refresh_from_db()
+                activity.refresh_from_db()
+                self.assertEqual(issue.status, Issue.Status.SOLUCAO_PROPOSTA)
+                self.assertIsNotNone(issue.analise_iniciada_em)
+                self.assertIsNotNone(issue.solucao_proposta_em)
+                self.assertEqual(activity.status, Activity.Status.LIBERADO)
+                self.assertEqual(self.client.post(start_url).status_code, 400)
+
+    def test_tester_e_outro_dev_nao_analisam_nem_propoem_solucao(self):
+        activity = self.criar_activity()
+        issue = Issue.objects.create(
+            projeto=self.project, atividade=activity, titulo="Erro fiscal",
+            descricao="Falhou.", tipo=Issue.Tipo.REQUISITO,
+            impacto=Issue.Impacto.ALTO, impeditiva=True,
+            tester=self.tester, desenvolvedor=self.dev,
+        )
+        for usuario in (self.tester, self.outro_dev):
+            with self.subTest(usuario=usuario.username):
+                self.client.force_authenticate(user=usuario)
+                issue.status = Issue.Status.ABERTA
+                issue.save(update_fields=["status"])
+                response = self.client.post(reverse("issues:start-analysis", kwargs={"project_id": self.project.id, "issue_id": issue.id}))
+                self.assertEqual(response.status_code, 403)
+                issue.status = Issue.Status.EM_ANALISE
+                issue.save(update_fields=["status"])
+                response = self.client.post(
+                    reverse("issues:propose-solution", kwargs={"project_id": self.project.id, "issue_id": issue.id}),
+                    {"proposedSolution": "Correcao."}, format="json",
+                )
+                self.assertEqual(response.status_code, 403)
 
     def test_dev_propoe_solucao(self):
         activity = self.criar_activity(status=Activity.Status.BLOQUEADO)

@@ -93,6 +93,8 @@ Campos fixos opcionais da `Activity`: Área, Sistema, Observações, Resultado E
 O HIVE não possui sistema de Custom Fields. Não criar `CustomField`, `CustomFieldValue` ou schema dinâmico de campos.
 
 ### Status da Activity
+Regra atualizada em 2026-10-16: predecessoras CONCLUIDO ou CANCELADO resolvem a dependencia. Uma atividade AGUARDANDO passa para LIBERADO quando todas as predecessoras estao em um desses dois status. Cancelar ou concluir predecessora reavalia as dependentes e registra a liberacao na trilha. Criacao/edicao com todas as predecessoras ja resolvidas tambem libera a atividade. Status BLOQUEADO, CONCLUIDO e CANCELADO das dependentes nao sao sobrescritos por essa regra.
+
 ```
 Aguardando → Liberado → Concluído
                        → Bloqueado (issue impeditiva) → Liberado (reteste)

@@ -82,6 +82,75 @@ class ActivityViewTests(APITestCase):
 
         self.assertEqual(response.status_code, 401)
 
+    def criar_activity_dependencia(self, nome, status=Activity.Status.LIBERADO):
+        return Activity.objects.create(
+            projeto=self.project,
+            no=self.processo,
+            nome=nome,
+            tester=self.tester,
+            desenvolvedor=self.dev,
+            data_inicio_planejada=date(2026, 9, 1),
+            data_conclusao_planejada=date(2026, 9, 2),
+            status=status,
+        )
+
+    def test_cancelar_ou_concluir_predecessora_libera_dependente_e_registra_historico(self):
+        self.client.force_authenticate(user=self.gestor)
+        for action in ["cancel", "complete"]:
+            with self.subTest(action=action):
+                predecessor = self.criar_activity_dependencia(f"Predecessora {action}")
+                dependent = self.criar_activity_dependencia(f"Dependente {action}", Activity.Status.AGUARDANDO)
+                ActivityPredecessor.objects.create(atividade=dependent, predecessora=predecessor)
+                response = self.client.post(
+                    reverse(f"activities:{action}", kwargs={"project_id": self.project.id, "activity_id": predecessor.id}),
+                    {"approvalEvidence": self.evidencia()} if action == "complete" else {},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, 200)
+                dependent.refresh_from_db()
+                self.assertEqual(dependent.status, Activity.Status.LIBERADO)
+                self.assertEqual(dependent.historico_status[-1]["text"], "Aguardando → Liberado")
+
+    def test_multiplas_predecessoras_exigem_todas_resolvidas_e_preservam_bloqueio(self):
+        self.client.force_authenticate(user=self.gestor)
+        first = self.criar_activity_dependencia("Primeira")
+        second = self.criar_activity_dependencia("Segunda")
+        dependent = self.criar_activity_dependencia("Dependente", Activity.Status.AGUARDANDO)
+        blocked = self.criar_activity_dependencia("Bloqueada por issue", Activity.Status.BLOQUEADO)
+        for item in [dependent, blocked]:
+            for predecessor in [first, second]:
+                ActivityPredecessor.objects.create(atividade=item, predecessora=predecessor)
+        response = self.client.post(reverse("activities:cancel", kwargs={"project_id": self.project.id, "activity_id": first.id}))
+        self.assertEqual(response.status_code, 200)
+        dependent.refresh_from_db()
+        self.assertEqual(dependent.status, Activity.Status.AGUARDANDO)
+        response = self.client.post(
+            reverse("activities:complete", kwargs={"project_id": self.project.id, "activity_id": second.id}),
+            {"approvalEvidence": self.evidencia()}, format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        dependent.refresh_from_db()
+        blocked.refresh_from_db()
+        self.assertEqual(dependent.status, Activity.Status.LIBERADO)
+        self.assertEqual(blocked.status, Activity.Status.BLOQUEADO)
+
+    def test_criar_activity_com_predecessora_resolvida_ja_nasce_liberada(self):
+        self.client.force_authenticate(user=self.gestor)
+        for status in [Activity.Status.CONCLUIDO, Activity.Status.CANCELADO]:
+            with self.subTest(status=status):
+                predecessor = self.criar_activity_dependencia(f"Resolvida {status}", status)
+                response = self.client.post(
+                    reverse("activities:list", kwargs={"project_id": self.project.id}),
+                    {
+                        "nodeId": str(self.processo.id), "name": f"Nova {status}",
+                        "testerId": str(self.tester.id), "developerId": str(self.dev.id),
+                        "plannedStart": "2026-09-03", "plannedEnd": "2026-09-05",
+                        "predecessorIds": [predecessor.id],
+                    }, format="json",
+                )
+                self.assertEqual(response.status_code, 201)
+                self.assertEqual(response.data["status"], "liberado")
+
     def test_gestor_cria_activity_sem_predecessora_liberada(self):
         self.client.force_authenticate(user=self.gestor)
         payload = {

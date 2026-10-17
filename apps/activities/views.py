@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .importer import importar_activities_de_arquivo
-from apps.projects.models import Project
+from apps.projects.models import Membership, Papel, Project
 from apps.projects.services import exigir_gestor, usuario_pode_gerenciar_projeto
 
 from .models import Activity
@@ -41,7 +41,9 @@ def dados_request_com_json(request, json_fields: tuple[str, ...]) -> dict:
 
 
 def usuario_pode_testar_activity(user, activity):
-    return activity.tester_id == user.id
+    return activity.tester_id == user.id and Membership.objects.filter(
+        usuario=user, projeto=activity.projeto, papel__codigo=Papel.Codigo.TESTER,
+    ).exists()
 
 
 def exigir_gestor_ou_tester_da_activity(user, activity) -> None:

@@ -32,11 +32,15 @@ def nome_usuario(usuario: Usuario) -> str:
 
 
 def usuario_pode_testar_activity(user: Usuario, activity: Activity) -> bool:
-    return activity.tester_id == user.id
+    return activity.tester_id == user.id and Membership.objects.filter(
+        usuario=user, projeto=activity.projeto, papel__codigo=Papel.Codigo.TESTER,
+    ).exists()
 
 
 def usuario_pode_desenvolver_issue(user: Usuario, issue: Issue) -> bool:
-    return issue.desenvolvedor_id == user.id
+    return issue.desenvolvedor_id == user.id and Membership.objects.filter(
+        usuario=user, projeto=issue.projeto, papel__codigo=Papel.Codigo.DEV,
+    ).exists()
 
 
 def exigir_tester_da_activity_ou_gestor(user: Usuario, activity: Activity) -> None:
@@ -153,7 +157,7 @@ def criar_issue(*, projeto: Project, usuario: Usuario, dados: dict, opening_file
 
 @transaction.atomic
 def iniciar_analise_issue(*, issue: Issue, usuario: Usuario) -> Issue:
-    exigir_dev_da_issue(usuario, issue)
+    exigir_dev_da_issue_ou_gestor(usuario, issue)
     if issue.status != Issue.Status.ABERTA:
         raise ValidationError({"status": "Somente issue aberta pode iniciar análise."})
     issue.status = Issue.Status.EM_ANALISE
@@ -164,7 +168,7 @@ def iniciar_analise_issue(*, issue: Issue, usuario: Usuario) -> Issue:
 
 @transaction.atomic
 def propor_solucao_issue(*, issue: Issue, usuario: Usuario, dados: dict, solution_file=None) -> Issue:
-    exigir_dev_da_issue(usuario, issue)
+    exigir_dev_da_issue_ou_gestor(usuario, issue)
     if issue.status != Issue.Status.EM_ANALISE:
         raise ValidationError({"status": "Somente issue em análise pode receber solução proposta."})
     issue.status = Issue.Status.SOLUCAO_PROPOSTA
