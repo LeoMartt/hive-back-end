@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 
 from .models import Membership, NoHierarquia, Papel, Project
 from .audit_export import gerar_zip_auditoria_projeto
+from .permissions import exigir_acao
 from .serializers import (
     MembershipSerializer,
     NoHierarquiaSerializer,
@@ -84,7 +85,17 @@ class ProjectDetailView(ProjectQuerysetMixin, APIView):
 
     def patch(self, request, project_id):
         project = self.get_project(project_id)
-        exigir_gestor(request.user, project)
+        for field in request.data:
+            if field == "permissionMatrix":
+                exigir_gestor(request.user, project)
+            elif field in {"spiSaudavel", "spiCritico", "agingAlertaDias", "agingRiscoDias", "issueAutoAnalysis"}:
+                exigir_acao(request.user, project, "config_thresholds")
+            elif field in {"anexoMaxMb", "exigirEvidenciaAtividade", "exigirEvidenciaIssue"}:
+                exigir_acao(request.user, project, "config_evidence")
+            elif field == "hierarchyLevels":
+                exigir_acao(request.user, project, "hierarchy_manage")
+            else:
+                exigir_acao(request.user, project, "project_edit")
         serializer = ProjectUpdateSerializer(
             data=request.data,
             partial=True,
@@ -106,7 +117,7 @@ class ProjectEvidenceImpactView(ProjectQuerysetMixin, APIView):
         from apps.activities.models import Activity
 
         project = self.get_project(project_id)
-        exigir_gestor(request.user, project)
+        exigir_acao(request.user, project, "config_evidence")
         count = project.activities.exclude(status__in=[Activity.Status.CONCLUIDO, Activity.Status.CANCELADO]).count()
         return Response({"pendingActivities": count})
 
@@ -114,6 +125,7 @@ class ProjectEvidenceImpactView(ProjectQuerysetMixin, APIView):
 class ProjectAuditExportView(ProjectQuerysetMixin, APIView):
     def get(self, request, project_id):
         project = self.get_project(project_id)
+        exigir_acao(request.user, project, "data_export")
         content = gerar_zip_auditoria_projeto(project, generated_by=request.user)
         response = HttpResponse(content, content_type="application/zip")
         response["Content-Disposition"] = f'attachment; filename="hive_auditoria_{project.id}.zip"'
@@ -134,7 +146,7 @@ class NoHierarquiaCollectionView(ProjectQuerysetMixin, APIView):
 
     def post(self, request, project_id):
         project = self.get_project(project_id)
-        exigir_gestor(request.user, project)
+        exigir_acao(request.user, project, "hierarchy_manage")
         serializer = NoHierarquiaWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -160,7 +172,7 @@ class NoHierarquiaDetailView(ProjectQuerysetMixin, APIView):
 
     def patch(self, request, project_id, node_id):
         project = self.get_project(project_id)
-        exigir_gestor(request.user, project)
+        exigir_acao(request.user, project, "hierarchy_manage")
         no = self.get_no(project, node_id)
         serializer = NoHierarquiaWriteSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)

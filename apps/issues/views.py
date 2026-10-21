@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.projects.models import Project
+from apps.projects.permissions import exigir_acao
 from .models import Issue
 from .serializers import IssueCreateSerializer, IssueProposeSolutionSerializer, IssueSerializer
 from .services import cancelar_issue, concluir_issue, criar_issue, iniciar_analise_issue, propor_solucao_issue
@@ -54,6 +55,7 @@ class IssueCollectionView(IssueQuerysetMixin, APIView):
 
     def get(self, request, project_id):
         project = self.visible_project(project_id)
+        exigir_acao(request.user, project, "data_view")
         queryset = self.issue_queryset(project)
         activity_id = request.query_params.get("activityId")
         if activity_id:
@@ -87,6 +89,7 @@ class IssueCollectionView(IssueQuerysetMixin, APIView):
 class IssueDetailView(IssueQuerysetMixin, APIView):
     def get(self, request, project_id, issue_id):
         project = self.visible_project(project_id)
+        exigir_acao(request.user, project, "data_view")
         issue = self.get_issue(project, issue_id)
         return Response(IssueSerializer(issue).data)
 

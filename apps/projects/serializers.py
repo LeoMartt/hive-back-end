@@ -4,6 +4,7 @@ from apps.activities.models import Activity
 
 from .models import Membership, NoHierarquia, Papel, Project
 from .services import resolver_codigo_papel
+from .permissions import matriz_efetiva, validar_matriz
 
 
 class TeamMemberSerializer(serializers.ModelSerializer):
@@ -36,6 +37,7 @@ class ProjectListSerializer(serializers.ModelSerializer):
     spi = serializers.SerializerMethodField()
     team = TeamMemberSerializer(source="memberships", many=True, read_only=True)
     updatedAt = serializers.DateTimeField(source="atualizado_em", read_only=True)
+    permissionMatrix = serializers.SerializerMethodField()
 
     class Meta:
         model = Project
@@ -50,10 +52,14 @@ class ProjectListSerializer(serializers.ModelSerializer):
             "spi",
             "team",
             "updatedAt",
+            "permissionMatrix",
         ]
 
     def get_mode(self, project: Project) -> str:
         return project.modo.lower()
+
+    def get_permissionMatrix(self, project):
+        return matriz_efetiva(project)
 
     def get_activityCount(self, project: Project) -> int:
         return project.activities.exclude(status=Activity.Status.CANCELADO).count()
@@ -75,6 +81,7 @@ class ProjectListSerializer(serializers.ModelSerializer):
 
 
 class ProjectDetailSerializer(ProjectListSerializer):
+    issueAutoAnalysis = serializers.BooleanField(source="issue_analise_automatica", read_only=True)
     description = serializers.CharField(source="descricao", read_only=True)
     agingAlertaDias = serializers.IntegerField(source="aging_alerta_dias", read_only=True)
     agingRiscoDias = serializers.IntegerField(source="aging_risco_dias", read_only=True)
@@ -110,6 +117,7 @@ class ProjectDetailSerializer(ProjectListSerializer):
             "anexoMaxMb",
             "exigirEvidenciaAtividade",
             "exigirEvidenciaIssue",
+            "issueAutoAnalysis",
         ]
 
 
@@ -163,6 +171,11 @@ class ProjectCreateSerializer(serializers.Serializer):
 
 
 class ProjectUpdateSerializer(serializers.Serializer):
+    permissionMatrix = serializers.JSONField(required=False)
+    issueAutoAnalysis = serializers.BooleanField(required=False)
+
+    def validate_permissionMatrix(self, value):
+        return validar_matriz(value)
     name = serializers.CharField(max_length=150, required=False)
     description = serializers.CharField(required=False, allow_blank=True)
     hierarchyLevels = serializers.ListField(

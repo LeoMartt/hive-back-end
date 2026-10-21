@@ -317,6 +317,13 @@ def concluir_activity(
     activity.observacao_aprovacao = observacao_aprovacao.strip()
     activity.evidencia_aprovacao = evidencia_aprovacao
     activity = salvar_activity(activity)
+    from apps.issues.models import Issue
+
+    activity.issues.filter(status=Issue.Status.SOLUCAO_PROPOSTA).update(
+        status=Issue.Status.CONCLUIDA,
+        resolvida_em=timezone.now(),
+        atualizada_em=timezone.now(),
+    )
     liberar_dependentes(activity)
     return activity
 

@@ -25,6 +25,9 @@ class Project(models.Model):
     anexo_max_mb = models.IntegerField(default=10)
     exigir_evidencia_atividade = models.BooleanField(default=True)
     exigir_evidencia_issue = models.BooleanField(default=True)
+    issue_analise_automatica = models.BooleanField(default=False)
+    matriz_permissoes = models.JSONField(default=dict, blank=True)
+    historico_politicas = models.JSONField(default=list, blank=True)
     ativo = models.BooleanField(default=True)
     proximo_codigo_issue = models.IntegerField(default=1)
     criado_por = models.ForeignKey(

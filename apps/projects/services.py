@@ -2,6 +2,7 @@ import uuid
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
 
 from apps.accounts.models import Usuario
@@ -181,6 +182,7 @@ def registrar_alteracao_evidencia(*, projeto: Project, anteriores: dict, usuario
 def atualizar_projeto(*, projeto: Project, dados: dict, usuario: Usuario | None = None) -> Project:
     projeto = Project.objects.select_for_update().get(pk=projeto.pk)
     anteriores = {field: getattr(projeto, field) for field in EVIDENCE_RULE_FIELDS}
+    politicas_anteriores = {"matriz_permissoes": projeto.matriz_permissoes, "issue_analise_automatica": projeto.issue_analise_automatica}
     if "name" in dados:
         projeto.nome = dados["name"].strip()
     if "description" in dados:
@@ -198,11 +200,19 @@ def atualizar_projeto(*, projeto: Project, dados: dict, usuario: Usuario | None 
         "anexoMaxMb": "anexo_max_mb",
         "exigirEvidenciaAtividade": "exigir_evidencia_atividade",
         "exigirEvidenciaIssue": "exigir_evidencia_issue",
+        "permissionMatrix": "matriz_permissoes",
+        "issueAutoAnalysis": "issue_analise_automatica",
     }
     for entrada, campo in campos_simples.items():
         if entrada in dados:
             setattr(projeto, campo, dados[entrada])
 
+    politicas_novas = {field: getattr(projeto, field) for field in politicas_anteriores}
+    if politicas_novas != politicas_anteriores:
+        projeto.historico_politicas = [*projeto.historico_politicas, {
+            "at": timezone.now().isoformat(), "author": (usuario.email or usuario.username) if usuario else "Sistema",
+            "before": politicas_anteriores, "after": politicas_novas,
+        }]
     try:
         projeto.full_clean()
         projeto.save()

@@ -10,6 +10,7 @@ from apps.activities.models import Activity
 from apps.activities.services import salvar_activity, status_liberado_por_predecessoras
 from apps.projects.models import Membership, Papel, Project
 from apps.projects.services import usuario_pode_gerenciar_projeto
+from apps.projects.permissions import exigir_acao
 from common.storage.evidences import upload_evidencia
 from common.validators.attachments import validar_arquivo_evidencia
 
@@ -45,19 +46,11 @@ def usuario_pode_desenvolver_issue(user: Usuario, issue: Issue) -> bool:
 
 
 def exigir_tester_da_activity_ou_gestor(user: Usuario, activity: Activity) -> None:
-    if usuario_pode_gerenciar_projeto(user, activity.projeto):
-        return
-    if usuario_pode_testar_activity(user, activity):
-        return
-    raise PermissionDenied("Apenas gestores ou o tester da atividade podem executar esta ação.")
+    exigir_acao(user, activity.projeto, "issues_resolve", activity=activity)
 
 
 def exigir_tester_da_activity_ou_gestor_para_criar_issue(user: Usuario, activity: Activity) -> None:
-    if usuario_pode_gerenciar_projeto(user, activity.projeto):
-        return
-    if usuario_pode_testar_activity(user, activity):
-        return
-    raise PermissionDenied("Apenas gestores ou o tester da atividade podem criar issue.")
+    exigir_acao(user, activity.projeto, "issues_create", activity=activity)
 
 
 def exigir_dev_da_issue(user: Usuario, issue: Issue) -> None:
@@ -67,9 +60,7 @@ def exigir_dev_da_issue(user: Usuario, issue: Issue) -> None:
 
 
 def exigir_dev_da_issue_ou_gestor(user: Usuario, issue: Issue) -> None:
-    if usuario_pode_gerenciar_projeto(user, issue.projeto):
-        return
-    exigir_dev_da_issue(user, issue)
+    exigir_acao(user, issue.projeto, "issues_analyze", issue=issue)
 
 
 def resolver_desenvolvedor(projeto: Project, dados: dict) -> Usuario:
@@ -144,6 +135,8 @@ def criar_issue(*, projeto: Project, usuario: Usuario, dados: dict, opening_file
         tester=usuario,
         desenvolvedor=desenvolvedor,
         anexo_abertura=dados.get("openingAttachment"),
+        status=Issue.Status.EM_ANALISE if projeto.issue_analise_automatica else Issue.Status.ABERTA,
+        analise_iniciada_em=timezone.now() if projeto.issue_analise_automatica else None,
     )
     if opening_file is not None:
         issue.anexo_abertura = upload_evidencia(
@@ -207,7 +200,7 @@ def atividade_tem_issues_abertas(activity: Activity) -> bool:
 
 @transaction.atomic
 def concluir_issue(*, issue: Issue, usuario: Usuario) -> Issue:
-    exigir_tester_da_activity_ou_gestor(usuario, issue.atividade)
+    exigir_acao(usuario, issue.projeto, "issues_resolve", issue=issue)
     if issue.status != Issue.Status.SOLUCAO_PROPOSTA:
         raise ValidationError({"status": "Somente issue com solução proposta pode ser concluída."})
 
@@ -223,7 +216,7 @@ def concluir_issue(*, issue: Issue, usuario: Usuario) -> Issue:
 
 @transaction.atomic
 def cancelar_issue(*, issue: Issue, usuario: Usuario) -> Issue:
-    exigir_dev_da_issue_ou_gestor(usuario, issue)
+    exigir_acao(usuario, issue.projeto, "issues_cancel", issue=issue)
     if issue.status != Issue.Status.EM_ANALISE:
         raise ValidationError({"status": "Somente issue em análise pode ser cancelada."})
     issue.status = Issue.Status.CANCELADA
