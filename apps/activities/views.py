@@ -160,12 +160,12 @@ class ActivityCompleteView(ActivityQuerysetMixin, APIView):
                 "uploadedAt": "",
                 "contentType": getattr(evidence_file, "content_type", "") or "",
             }
-        serializer = ActivityCompleteSerializer(data=dados)
+        serializer = ActivityCompleteSerializer(data=dados, context={"project": project})
         serializer.is_valid(raise_exception=True)
         activity = concluir_activity(
             activity=activity,
             observacao_aprovacao=serializer.validated_data.get("approvalNote") or "",
-            evidencia_aprovacao=serializer.validated_data["approvalEvidence"],
+            evidencia_aprovacao=serializer.validated_data.get("approvalEvidence"),
             evidencia_file=evidence_file,
             usuario=request.user,
         )

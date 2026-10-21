@@ -1,0 +1,40 @@
+CHECAGEM DE CONFIGURACOES DE EVIDENCIA - 20/10/2026
+
+Problemas encontrados:
+- A opcao de atividade era salva, mas front, serializer e servico sempre
+  exigiam evidencia. Desligar a opcao nao permitia concluir sem arquivo.
+- O limite anexo_max_mb era salvo, mas nao era aplicado aos uploads.
+- Falhas ao carregar configuracoes eram ignoradas, mantendo valores padrao.
+
+Correcoes:
+- Atividade: com exigencia ligada, concluir sem evidencia e bloqueado;
+  desligada, concluir sem arquivo e permitido e salva evidencia nula.
+- A mesma configuracao e consumida no modal individual e no modal em lote.
+- Issue: a exigencia vale para o anexo de abertura de issue impeditiva.
+  Issue nao impeditiva e anexo de solucao continuam opcionais.
+- Limite de tamanho aplicado no front e no backend aos tres uploads:
+  aprovacao de atividade, abertura de issue e proposta de solucao.
+- Audio/video continuam proibidos, inclusive quando evidencia e opcional.
+- Conclusao aguarda resposta da API antes de fechar o modal; erros ficam
+  visiveis e nao simulam sucesso.
+- Configuracoes sao isoladas por projeto. Operacoes dependentes ficam
+  indisponiveis ate o carregamento; erro de leitura oferece nova tentativa.
+- O formulario de limite impede valores nao inteiros ou menores que 1 MB.
+
+Verificacao:
+- API: salvar pelo PATCH e reler pelo GET, nos modos UAT e Cutover.
+- Combinacoes independentes de exigencia de atividade e issue.
+- Conclusao sem campo de evidencia, com null e via multipart sem arquivo.
+- Upload no limite exato, acima dele e aceito apos aumentar o limite.
+- Proibicao de audio/video mesmo com exigencia desligada.
+- Navegador: alterar as opcoes na pagina real e confirmar o comportamento
+  dos formularios com componentes reais e dados locais de teste.
+- Suite completa do backend: 106 testes aprovados em SQLite temporario.
+- Nenhuma migracao necessaria. Nenhum registro ou arquivo do Azure foi
+  criado, alterado ou removido durante esta verificacao.
+
+Limite da conclusao:
+Esta checagem cobre configuracoes de evidencias, uploads e seu carregamento.
+Nao representa certificacao de que toda a pagina ou todo o sistema esta
+100% livre de falhas. Os uploads nos testes de API usaram storage simulado,
+sem enviar arquivos reais ao Azure.

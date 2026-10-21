@@ -11,6 +11,7 @@ from apps.activities.services import salvar_activity, status_liberado_por_predec
 from apps.projects.models import Membership, Papel, Project
 from apps.projects.services import usuario_pode_gerenciar_projeto
 from common.storage.evidences import upload_evidencia
+from common.validators.attachments import validar_arquivo_evidencia
 
 from .models import Issue
 
@@ -128,6 +129,7 @@ def criar_issue(*, projeto: Project, usuario: Usuario, dados: dict, opening_file
         raise ValidationError({"relatedActivityId": "Atividade concluída ou cancelada não pode receber issue."})
 
     exigir_tester_da_activity_ou_gestor_para_criar_issue(usuario, activity)
+    validar_arquivo_evidencia(opening_file, limite_mb=projeto.anexo_max_mb, field_name="openingFile")
     desenvolvedor = resolver_desenvolvedor(projeto, dados)
 
     issue = Issue.objects.create(
@@ -169,6 +171,7 @@ def iniciar_analise_issue(*, issue: Issue, usuario: Usuario) -> Issue:
 @transaction.atomic
 def propor_solucao_issue(*, issue: Issue, usuario: Usuario, dados: dict, solution_file=None) -> Issue:
     exigir_dev_da_issue_ou_gestor(usuario, issue)
+    validar_arquivo_evidencia(solution_file, limite_mb=issue.projeto.anexo_max_mb, field_name="solutionFile")
     if issue.status != Issue.Status.EM_ANALISE:
         raise ValidationError({"status": "Somente issue em análise pode receber solução proposta."})
     issue.status = Issue.Status.SOLUCAO_PROPOSTA

@@ -6,7 +6,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError as DRFVa
 
 from apps.accounts.models import Usuario
 
-from .models import Membership, NoHierarquia, Papel, Project
+from .models import EvidenceRuleChange, Membership, NoHierarquia, Papel, Project
 
 
 ROLE_BY_LABEL = {
@@ -164,8 +164,23 @@ def criar_projeto(*, usuario: Usuario, dados: dict) -> Project:
     return project
 
 
+EVIDENCE_RULE_FIELDS = ("exigir_evidencia_atividade", "exigir_evidencia_issue", "anexo_max_mb")
+
+
+def registrar_alteracao_evidencia(*, projeto: Project, anteriores: dict, usuario: Usuario | None):
+    novos = {field: getattr(projeto, field) for field in EVIDENCE_RULE_FIELDS}
+    if anteriores != novos:
+        EvidenceRuleChange.objects.create(
+            projeto=projeto, usuario=usuario,
+            autor=(usuario.email or usuario.username) if usuario else "Sistema",
+            valores_anteriores=anteriores, valores_novos=novos,
+        )
+
+
 @transaction.atomic
-def atualizar_projeto(*, projeto: Project, dados: dict) -> Project:
+def atualizar_projeto(*, projeto: Project, dados: dict, usuario: Usuario | None = None) -> Project:
+    projeto = Project.objects.select_for_update().get(pk=projeto.pk)
+    anteriores = {field: getattr(projeto, field) for field in EVIDENCE_RULE_FIELDS}
     if "name" in dados:
         projeto.nome = dados["name"].strip()
     if "description" in dados:
@@ -195,6 +210,7 @@ def atualizar_projeto(*, projeto: Project, dados: dict) -> Project:
         raise DRFValidationError({"name": "Já existe projeto ativo com este nome e modo."}) from exc
     except ValidationError as exc:
         raise DRFValidationError(exc.message_dict) from exc
+    registrar_alteracao_evidencia(projeto=projeto, anteriores=anteriores, usuario=usuario)
     return projeto
 
 

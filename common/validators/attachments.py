@@ -47,3 +47,14 @@ def validar_anexo_evidencia(anexo, *, field_name: str):
         raise ValidationError({field_name: "Evidências em áudio ou vídeo não são permitidas."})
 
     return anexo
+
+
+def validar_arquivo_evidencia(arquivo, *, limite_mb: int, field_name: str) -> None:
+    if arquivo is None:
+        return
+    validar_anexo_evidencia(
+        {"fileName": arquivo.name, "contentType": getattr(arquivo, "content_type", "") or ""},
+        field_name=field_name,
+    )
+    if arquivo.size > limite_mb * 1024 * 1024:
+        raise ValidationError({field_name: f"O arquivo excede o limite de {limite_mb} MB configurado no projeto."})

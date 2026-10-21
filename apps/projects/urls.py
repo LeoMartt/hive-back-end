@@ -9,6 +9,7 @@ from .views import (
     ProjectAuditExportView,
     ProjectCollectionView,
     ProjectDetailView,
+    ProjectEvidenceImpactView,
 )
 
 app_name = "projects"
@@ -17,6 +18,7 @@ urlpatterns = [
     path("", ProjectCollectionView.as_view(), name="list"),
     path("roles/", PapelListView.as_view(), name="roles-list"),
     path("<uuid:project_id>/", ProjectDetailView.as_view(), name="detail"),
+    path("<uuid:project_id>/evidence-impact/", ProjectEvidenceImpactView.as_view(), name="evidence-impact"),
     path("<uuid:project_id>/audit-export/", ProjectAuditExportView.as_view(), name="audit-export"),
     path("<uuid:project_id>/hierarchy/", NoHierarquiaCollectionView.as_view(), name="hierarchy-list"),
     path(

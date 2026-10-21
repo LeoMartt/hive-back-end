@@ -50,7 +50,8 @@ O bloco de activities ja tem:
   - coluna Sistema da planilha e salva no campo sistema da Activity;
 - front lendo activities reais quando VITE_USE_MOCKS=false;
 - modal "Nova atividade" usando hierarquia real e IDs reais de tester/dev;
-- conclusao de atividade exige evidencia;
+- conclusao de atividade exige evidencia somente quando a configuracao
+  exigir_evidencia_atividade do projeto estiver ligada;
 - upload real/binario da evidencia de aprovacao para Azure Blob;
 - metadados da evidencia de aprovacao sao salvos em evidencia_aprovacao,
   incluindo storagePath, url SAS e urlExpiresAt;
