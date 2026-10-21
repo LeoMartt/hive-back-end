@@ -9,7 +9,7 @@ class ProjectAdmin(admin.ModelAdmin):
     list_display = ("nome", "modo", "ativo", "criado_por", "criado_em", "atualizado_em")
     list_filter = ("modo", "ativo")
     search_fields = ("nome", "descricao")
-    readonly_fields = ("criado_em", "atualizado_em")
+    readonly_fields = ("criado_em", "atualizado_em", "historico_politicas")
 
     def save_model(self, request, obj, form, change):
         anteriores = None

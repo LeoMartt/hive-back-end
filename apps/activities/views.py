@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 from .importer import importar_activities_de_arquivo
 from apps.projects.models import Membership, Papel, Project
 from apps.projects.services import exigir_gestor, usuario_pode_gerenciar_projeto
+from apps.projects.permissions import exigir_acao
 
 from .models import Activity
 from .serializers import (
@@ -83,13 +84,14 @@ class ActivityQuerysetMixin:
 class ActivityCollectionView(ActivityQuerysetMixin, APIView):
     def get(self, request, project_id):
         project = self.visible_project(project_id)
+        exigir_acao(request.user, project, "data_view")
         queryset = self.activity_queryset(project)
         serializer = ActivitySerializer(queryset, many=True)
         return Response(serializer.data)
 
     def post(self, request, project_id):
         project = self.visible_project(project_id)
-        exigir_gestor(request.user, project)
+        exigir_acao(request.user, project, "activities_create")
         serializer = ActivityCreateSerializer(data=request.data, context={"project": project})
         serializer.is_valid(raise_exception=True)
         activity = criar_activity(projeto=project, dados=serializer.validated_data)
@@ -101,7 +103,7 @@ class ActivityImportView(ActivityQuerysetMixin, APIView):
 
     def post(self, request, project_id):
         project = self.visible_project(project_id)
-        exigir_gestor(request.user, project)
+        exigir_acao(request.user, project, "activities_import")
         uploaded_file = request.FILES.get("file")
         if uploaded_file is None:
             return Response({"file": "Envie o arquivo no campo file."}, status=status.HTTP_400_BAD_REQUEST)
@@ -117,13 +119,17 @@ class ActivityImportView(ActivityQuerysetMixin, APIView):
 class ActivityDetailView(ActivityQuerysetMixin, APIView):
     def get(self, request, project_id, activity_id):
         project = self.visible_project(project_id)
+        exigir_acao(request.user, project, "data_view")
         activity = self.get_activity(project, activity_id)
         return Response(ActivitySerializer(activity).data)
 
     def patch(self, request, project_id, activity_id):
         project = self.visible_project(project_id)
-        exigir_gestor(request.user, project)
         activity = self.get_activity(project, activity_id)
+        if set(request.data) & {"testerId", "developerId"}:
+            exigir_acao(request.user, project, "activities_assign", activity=activity)
+        if not request.data or set(request.data) - {"testerId", "developerId"}:
+            exigir_acao(request.user, project, "activities_edit", activity=activity)
         serializer = ActivityWriteSerializer(
             data=request.data,
             partial=True,
@@ -137,8 +143,8 @@ class ActivityDetailView(ActivityQuerysetMixin, APIView):
 class ActivityCancelView(ActivityQuerysetMixin, APIView):
     def post(self, request, project_id, activity_id):
         project = self.visible_project(project_id)
-        exigir_gestor(request.user, project)
         activity = self.get_activity(project, activity_id)
+        exigir_acao(request.user, project, "activities_cancel", activity=activity)
         activity = cancelar_activity(activity=activity)
         return Response(ActivitySerializer(activity).data)
 
@@ -149,7 +155,7 @@ class ActivityCompleteView(ActivityQuerysetMixin, APIView):
     def post(self, request, project_id, activity_id):
         project = self.visible_project(project_id)
         activity = self.get_activity(project, activity_id)
-        exigir_gestor_ou_tester_da_activity(request.user, activity)
+        exigir_acao(request.user, project, "activities_complete", activity=activity)
         evidence_file = request.FILES.get("approvalFile")
         dados = dados_request_com_json(request, ("approvalEvidence",))
         if evidence_file is not None and not dados.get("approvalEvidence"):
@@ -176,7 +182,7 @@ class ActivityBlockView(ActivityQuerysetMixin, APIView):
     def post(self, request, project_id, activity_id):
         project = self.visible_project(project_id)
         activity = self.get_activity(project, activity_id)
-        exigir_gestor_ou_tester_da_activity(request.user, activity)
+        exigir_acao(request.user, project, "activities_block", activity=activity)
         serializer = ActivityBlockSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         activity = bloquear_activity(

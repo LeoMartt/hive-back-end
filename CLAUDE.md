@@ -11,6 +11,8 @@ Este repositório é **só o backend** (Django + DRF). O frontend (React) vive e
 
 ## Estado atual do repositório
 
+Em 21/10/2026: matriz por projeto em `matriz_permissoes`, com controle de Gestor preservado e verificacoes de acao no backend; `issue_analise_automatica` afeta somente novas issues; `historico_politicas` registra mudancas pela API. Concluir atividade fecha suas issues SOLUCAO_PROPOSTA na mesma transacao. Ver `docs/matriz_dinamica_e_analise_automatica.md`. Migration projects.0006. Dados antigos podem ser revisados com `reconciliar_issues_concluidas` (simulacao por padrao).
+
 Decisao de alteracao de evidencias (2026-10-20): configuracoes podem mudar com confirmacao no frontend e contagem de atividades pendentes; nao ha invalidacao ou cobranca retroativa. A regra vigente vale na proxima conclusao/abertura, sem congelar a regra na criacao da atividade. Mudancas pela API/Admin geram EvidenceRuleChange com autor, data e antes/depois. Ver `docs/regras_alteracao_evidencias.md`.
 
 Correcao de configuracoes de evidencia (2026-10-20): a conclusao de atividade exige evidencia somente quando `Project.exigir_evidencia_atividade` estiver ligado; com a opcao desligada, `approvalEvidence` pode ser omitido ou nulo. `exigir_evidencia_issue` se aplica ao anexo de abertura de issue impeditiva, nao ao anexo de solucao. `anexo_max_mb` e validado nos arquivos reais de aprovacao, abertura de issue e proposta de solucao antes do upload. Audio/video continuam proibidos mesmo para evidencia opcional. Esta regra substitui mencoes antigas de evidencia de atividade sempre obrigatoria. Ver `docs/check_configuracoes_evidencias.txt`.
