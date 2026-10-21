@@ -1,4 +1,5 @@
 from django.http import HttpResponse
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.generics import ListAPIView
@@ -9,6 +10,8 @@ from rest_framework.views import APIView
 from .models import Membership, NoHierarquia, Papel, Project
 from .audit_export import gerar_zip_auditoria_projeto
 from .permissions import exigir_acao
+from .dashboard import dashboard_do_projeto
+from rest_framework import serializers
 from .serializers import (
     MembershipSerializer,
     NoHierarquiaSerializer,
@@ -39,6 +42,9 @@ class ProjectQuerysetMixin:
         return Project.objects.filter(ativo=True).prefetch_related(
             "memberships__usuario",
             "memberships__papel",
+        ).annotate(
+            active_activity_count=Count("activities", filter=~Q(activities__status="CANCELADO"), distinct=True),
+            completed_activity_count=Count("activities", filter=Q(activities__status="CONCLUIDO"), distinct=True),
         ).order_by(
             "-criado_em",
             "nome",
@@ -110,6 +116,17 @@ class ProjectDetailView(ProjectQuerysetMixin, APIView):
         exigir_gestor(request.user, project)
         desativar_projeto(projeto=project)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ProjectDashboardView(ProjectQuerysetMixin, APIView):
+    def get(self, request, project_id):
+        project = self.get_project(project_id)
+        exigir_acao(request.user, project, "dashboard_view")
+        exigir_acao(request.user, project, "data_view")
+        today = request.query_params.get("today")
+        if today is not None:
+            today = serializers.DateField().run_validation(today)
+        return Response(dashboard_do_projeto(project, today))
 
 
 class ProjectEvidenceImpactView(ProjectQuerysetMixin, APIView):

@@ -133,6 +133,13 @@ class IssueSerializer(serializers.ModelSerializer):
         return issue.solucao_proposta or None
 
 
+class IssueSummarySerializer(IssueSerializer):
+    class Meta(IssueSerializer.Meta):
+        fields = [field for field in IssueSerializer.Meta.fields if field not in {
+            "description", "impactNote", "proposedSolution", "openingAttachment", "solutionAttachment",
+        }]
+
+
 class IssueCreateSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=200)
     description = serializers.CharField()

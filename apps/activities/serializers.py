@@ -121,6 +121,8 @@ class ActivitySerializer(serializers.ModelSerializer):
         return [predecessora.id for predecessora in activity.predecessoras.all()]
 
     def get_issueCount(self, activity: Activity) -> int:
+        if hasattr(activity, "open_issue_count"):
+            return activity.open_issue_count
         return activity.issues.exclude(status__in=["CONCLUIDA", "CANCELADA"]).count()
 
     def get_notes(self, activity: Activity) -> str | None:
@@ -134,6 +136,13 @@ class ActivitySerializer(serializers.ModelSerializer):
 
     def get_rejectedAt(self, activity: Activity):
         return None
+
+
+class ActivitySummarySerializer(ActivitySerializer):
+    class Meta(ActivitySerializer.Meta):
+        fields = [field for field in ActivitySerializer.Meta.fields if field not in {
+            "expectedResult", "notes", "attachments", "approvalEvidence", "approvalNote", "auditTrail",
+        }]
 
 
 class ActivityWriteSerializer(serializers.Serializer):
