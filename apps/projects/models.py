@@ -91,6 +91,20 @@ class Project(models.Model):
         return self.nome
 
 
+class EvidenceRuleChange(models.Model):
+    projeto = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="alteracoes_regras_evidencia")
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+    autor = models.CharField(max_length=320)
+    valores_anteriores = models.JSONField()
+    valores_novos = models.JSONField()
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-criado_em", "-id"]
+        verbose_name = "alteração de regras de evidência"
+        verbose_name_plural = "alterações de regras de evidência"
+
+
 class NoHierarquia(models.Model):
     class Nivel(models.IntegerChoices):
         NIVEL_1 = 1, "Nível 1"

@@ -202,13 +202,16 @@ class ActivityCreateSerializer(ActivityWriteSerializer):
 
 class ActivityCompleteSerializer(serializers.Serializer):
     approvalNote = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    approvalEvidence = serializers.JSONField(required=True)
+    approvalEvidence = serializers.JSONField(required=False, allow_null=True)
 
     def validate_approvalEvidence(self, value):
         anexo = validar_anexo_evidencia(value, field_name="approvalEvidence")
-        if not anexo:
-            raise serializers.ValidationError("Evidência é obrigatória para concluir atividade.")
         return anexo
+
+    def validate(self, attrs):
+        if self.context["project"].exigir_evidencia_atividade and not attrs.get("approvalEvidence"):
+            raise serializers.ValidationError({"approvalEvidence": "Evidência é obrigatória para concluir atividade."})
+        return attrs
 
 
 class ActivityBlockSerializer(serializers.Serializer):

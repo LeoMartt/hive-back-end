@@ -91,7 +91,7 @@ class ProjectDetailView(ProjectQuerysetMixin, APIView):
             context={"project": project},
         )
         serializer.is_valid(raise_exception=True)
-        project = atualizar_projeto(projeto=project, dados=serializer.validated_data)
+        project = atualizar_projeto(projeto=project, dados=serializer.validated_data, usuario=request.user)
         return Response(ProjectDetailSerializer(project).data)
 
     def delete(self, request, project_id):
@@ -99,6 +99,16 @@ class ProjectDetailView(ProjectQuerysetMixin, APIView):
         exigir_gestor(request.user, project)
         desativar_projeto(projeto=project)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ProjectEvidenceImpactView(ProjectQuerysetMixin, APIView):
+    def get(self, request, project_id):
+        from apps.activities.models import Activity
+
+        project = self.get_project(project_id)
+        exigir_gestor(request.user, project)
+        count = project.activities.exclude(status__in=[Activity.Status.CONCLUIDO, Activity.Status.CANCELADO]).count()
+        return Response({"pendingActivities": count})
 
 
 class ProjectAuditExportView(ProjectQuerysetMixin, APIView):

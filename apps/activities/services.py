@@ -7,6 +7,7 @@ from rest_framework.exceptions import ValidationError as DRFValidationError
 from apps.accounts.models import Usuario
 from apps.projects.models import Membership, NoHierarquia, Papel, Project
 from common.storage.evidences import upload_evidencia
+from common.validators.attachments import validar_arquivo_evidencia
 
 from .models import Activity, ActivityPredecessor
 
@@ -299,8 +300,9 @@ def concluir_activity(
 ) -> Activity:
     if activity.status != Activity.Status.LIBERADO:
         raise DRFValidationError({"status": "Somente atividade liberada pode ser concluída."})
-    if not evidencia_aprovacao:
+    if activity.projeto.exigir_evidencia_atividade and not evidencia_aprovacao and evidencia_file is None:
         raise DRFValidationError({"approvalEvidence": "Evidência é obrigatória para concluir atividade."})
+    validar_arquivo_evidencia(evidencia_file, limite_mb=activity.projeto.anexo_max_mb, field_name="approvalFile")
     if evidencia_file is not None:
         uploaded_by = usuario.first_name or usuario.username if usuario else ""
         evidencia_aprovacao = upload_evidencia(
