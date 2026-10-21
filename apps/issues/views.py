@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 from apps.projects.models import Project
 from apps.projects.permissions import exigir_acao
 from .models import Issue
-from .serializers import IssueCreateSerializer, IssueProposeSolutionSerializer, IssueSerializer
+from .serializers import IssueCreateSerializer, IssueProposeSolutionSerializer, IssueSerializer, IssueSummarySerializer
 from .services import cancelar_issue, concluir_issue, criar_issue, iniciar_analise_issue, propor_solucao_issue
 
 
@@ -60,7 +60,13 @@ class IssueCollectionView(IssueQuerysetMixin, APIView):
         activity_id = request.query_params.get("activityId")
         if activity_id:
             queryset = queryset.filter(atividade_id=activity_id)
-        serializer = IssueSerializer(queryset, many=True)
+        serializer_class = IssueSummarySerializer if request.query_params.get("view") == "summary" else IssueSerializer
+        if serializer_class is IssueSummarySerializer:
+            queryset = queryset.defer("descricao", "nota_impacto", "solucao_proposta", "anexo_abertura", "anexo_solucao")
+        ids = request.query_params.get("ids")
+        if ids is not None:
+            queryset = queryset.filter(id__in=[part for part in ids.split(",") if part.isdigit()])
+        serializer = serializer_class(queryset, many=True)
         return Response(serializer.data)
 
     def post(self, request, project_id):

@@ -62,9 +62,13 @@ class ProjectListSerializer(serializers.ModelSerializer):
         return matriz_efetiva(project)
 
     def get_activityCount(self, project: Project) -> int:
+        if hasattr(project, "active_activity_count"):
+            return project.active_activity_count
         return project.activities.exclude(status=Activity.Status.CANCELADO).count()
 
     def get_completedCount(self, project: Project) -> int:
+        if hasattr(project, "completed_activity_count"):
+            return project.completed_activity_count
         return project.activities.filter(status=Activity.Status.CONCLUIDO).count()
 
     def get_hierarchyLevels(self, project: Project) -> list[str]:

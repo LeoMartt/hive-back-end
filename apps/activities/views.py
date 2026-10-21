@@ -13,11 +13,13 @@ from apps.projects.services import exigir_gestor, usuario_pode_gerenciar_projeto
 from apps.projects.permissions import exigir_acao
 
 from .models import Activity
+from .queries import activities_com_relacoes
 from .serializers import (
     ActivityBlockSerializer,
     ActivityCompleteSerializer,
     ActivityCreateSerializer,
     ActivitySerializer,
+    ActivitySummarySerializer,
     ActivityWriteSerializer,
 )
 from .services import (
@@ -69,13 +71,7 @@ class ActivityQuerysetMixin:
         return get_object_or_404(Project.objects.none(), id=project_id)
 
     def activity_queryset(self, project):
-        return Activity.objects.filter(projeto=project).select_related(
-            "projeto",
-            "no",
-            "no__parent",
-            "tester",
-            "desenvolvedor",
-        ).prefetch_related("predecessoras")
+        return activities_com_relacoes(project)
 
     def get_activity(self, project, activity_id):
         return get_object_or_404(self.activity_queryset(project), id=activity_id)
@@ -86,7 +82,13 @@ class ActivityCollectionView(ActivityQuerysetMixin, APIView):
         project = self.visible_project(project_id)
         exigir_acao(request.user, project, "data_view")
         queryset = self.activity_queryset(project)
-        serializer = ActivitySerializer(queryset, many=True)
+        serializer_class = ActivitySummarySerializer if request.query_params.get("view") == "summary" else ActivitySerializer
+        if serializer_class is ActivitySummarySerializer:
+            queryset = queryset.defer("historico_status", "evidencia_aprovacao", "resultado_esperado", "observacoes", "observacao_aprovacao")
+        ids = request.query_params.get("ids")
+        if ids is not None:
+            queryset = queryset.filter(id__in=[part for part in ids.split(",") if part.isdigit()])
+        serializer = serializer_class(queryset, many=True)
         return Response(serializer.data)
 
     def post(self, request, project_id):
@@ -109,7 +111,7 @@ class ActivityImportView(ActivityQuerysetMixin, APIView):
             return Response({"file": "Envie o arquivo no campo file."}, status=status.HTTP_400_BAD_REQUEST)
 
         activities = importar_activities_de_arquivo(projeto=project, uploaded_file=uploaded_file)
-        serializer = ActivitySerializer(activities, many=True)
+        serializer = ActivitySerializer(self.activity_queryset(project).filter(id__in=[activity.id for activity in activities]), many=True)
         return Response(
             {"created": len(activities), "activities": serializer.data},
             status=status.HTTP_201_CREATED,
