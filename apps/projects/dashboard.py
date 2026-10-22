@@ -7,6 +7,7 @@ from django.utils import timezone
 
 from apps.activities.models import Activity
 from apps.issues.models import Issue
+from .spi import calcular_spi
 
 
 def percentage(part, total):
@@ -87,5 +88,5 @@ def dashboard_do_projeto(project, today=None):
             "authorName": item.tester.first_name or item.tester.username, "at": item.atualizada_em.isoformat()})
     recent.sort(key=lambda item: item["at"], reverse=True)
     return {"activities": activity_stats, "issues": issue_stats,
-        "spi": completed / active_total if active_total else None,
+        "spi": calcular_spi(activities, today),
         "indicators": distribution, "curve": curve, "recent": recent[:7]}

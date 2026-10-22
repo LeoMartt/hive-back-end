@@ -157,6 +157,8 @@ class IssueCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError({"dev": "Desenvolvedor responsável é obrigatório."})
 
         project = self.context["project"]
+        if project.modo == "CUTOVER" and not attrs["impeditiva"]:
+            raise serializers.ValidationError({"impeditiva": "No Cutover, toda issue deve ser impeditiva."})
         attrs["activity"] = resolver_activity_por_codigo(attrs.pop("relatedActivityId"), project)
         attrs["type"] = TIPO_MODEL[attrs["type"]]
         attrs["impact"] = IMPACTO_MODEL[attrs["impact"]]

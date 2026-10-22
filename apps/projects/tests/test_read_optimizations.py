@@ -110,7 +110,7 @@ class ReadOptimizationTests(APITestCase):
         self.assertEqual(data["activities"], {"total": 3, "concluido": 1, "liberado": 1, "bloqueado": 0, "aguardando": 0, "atrasado": 0})
         self.assertEqual(data["issues"]["canceladas"], 1)
         self.assertEqual(data["issues"]["tempoMedioResolucaoDias"], 2)
-        self.assertEqual(data["spi"], 0.5)
+        self.assertAlmostEqual(data["spi"], 1 / 1.5)
         self.assertEqual(data["indicators"], {"pace": 100, "quality": 100, "backlog": 50})
         self.assertEqual(data["curve"]["labels"], ["01/10", "02/10", "03/10", "04/10", "05/10"])
         self.assertEqual(data["curve"]["plannedCounts"], [0, 0, 1, 1, 2])

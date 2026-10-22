@@ -151,7 +151,8 @@ class EvidenceConfigurationTests(APITestCase):
                             activity = self.activity(project, node)
                             response = self.client.post(reverse("issues:list", kwargs={"project_id": project.id}), self.issue_payload(activity, impeditiva), format="json")
                             required = issue_required and impeditiva
-                            self.assertEqual(response.status_code, 400 if required else 201, response.data)
+                            disallowed = project.modo == Project.Modo.CUTOVER and not impeditiva
+                            self.assertEqual(response.status_code, 400 if required or disallowed else 201, response.data)
 
     def test_servico_de_conclusao_tambem_respeita_a_flag(self):
         for project, node in self.projects:

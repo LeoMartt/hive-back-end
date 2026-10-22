@@ -2,6 +2,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import F, Q
+from django.utils import timezone
 
 from apps.projects.models import NoHierarquia, Project
 
@@ -104,6 +105,33 @@ class Activity(models.Model):
 
     def __str__(self) -> str:
         return f"{self.codigo_visivel} - {self.nome}"
+
+
+class ActivityStatusEvent(models.Model):
+    atividade = models.ForeignKey(Activity, on_delete=models.PROTECT, related_name="eventos_status")
+    autor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT)
+    autor_nome = models.CharField(max_length=255, blank=True)
+    autor_email = models.EmailField(blank=True)
+    ocorrido_em = models.DateTimeField(default=timezone.now)
+    status_anterior = models.CharField(max_length=20, blank=True)
+    status_novo = models.CharField(max_length=20, blank=True)
+    texto = models.TextField()
+    origem = models.CharField(max_length=30, default="sistema")
+    motivo = models.TextField(blank=True)
+    atividade_nome = models.CharField(max_length=200)
+
+    class Meta:
+        ordering = ["ocorrido_em", "id"]
+        indexes = [models.Index(fields=["atividade", "ocorrido_em"], name="activity_event_timeline_idx")]
+        verbose_name = "evento imutavel de atividade"
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("Eventos de auditoria não podem ser alterados.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Eventos de auditoria não podem ser excluídos.")
 
 
 class ActivityPredecessor(models.Model):

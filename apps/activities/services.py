@@ -9,7 +9,7 @@ from apps.projects.models import Membership, NoHierarquia, Papel, Project
 from common.storage.evidences import upload_evidencia
 from common.validators.attachments import validar_arquivo_evidencia
 
-from .models import Activity, ActivityPredecessor
+from .models import Activity, ActivityPredecessor, ActivityStatusEvent
 
 
 def formatar_codigo_activity(activity_id: int) -> str:
@@ -157,28 +157,37 @@ def status_liberado_por_predecessoras(predecessoras: list[Activity]) -> str:
     return Activity.Status.AGUARDANDO
 
 
-def liberar_dependentes(activity: Activity) -> None:
+def liberar_dependentes(activity: Activity, usuario=None) -> None:
     for dependente in activity.dependentes.filter(status=Activity.Status.AGUARDANDO).prefetch_related(
         "predecessoras",
     ):
         if status_liberado_por_predecessoras(list(dependente.predecessoras.all())) == Activity.Status.LIBERADO:
             dependente.status = Activity.Status.LIBERADO
-            salvar_activity(dependente)
+            salvar_activity(dependente, usuario=usuario, motivo=f"Predecessora {activity.codigo_visivel} resolvida")
 
 
 @transaction.atomic
-def salvar_activity(activity: Activity) -> Activity:
+def salvar_activity(activity: Activity, *, usuario=None, origem="sistema", motivo="") -> Activity:
     try:
         anterior = Activity.objects.select_for_update().filter(pk=activity.pk).first() if activity.pk else None
         if anterior:
-            activity.historico_status = list(anterior.historico_status)
-            if anterior.status != activity.status:
-                activity.historico_status.append({
-                    "at": timezone.now().isoformat(),
-                    "text": f"{Activity.Status(anterior.status).label} → {Activity.Status(activity.status).label}",
-                })
+            activity.historico_status = anterior.historico_status
+            activity.numero_retest = anterior.numero_retest
+            if anterior.status == Activity.Status.BLOQUEADO and activity.status == Activity.Status.LIBERADO and activity.issues.exists():
+                activity.numero_retest += 1
         activity.full_clean()
         activity.save()
+        if anterior is None or anterior.status != activity.status:
+            ActivityStatusEvent.objects.create(
+                atividade=activity, autor=usuario,
+                autor_nome=(usuario.first_name or usuario.username) if usuario else "Sistema / autor não informado",
+                autor_email=usuario.email if usuario else "",
+                status_anterior=anterior.status if anterior else "", status_novo=activity.status,
+                texto=f"{Activity.Status(anterior.status).label} → {Activity.Status(activity.status).label}" if anterior else "Atividade criada",
+                origem=origem, motivo=motivo, atividade_nome=activity.nome,
+            )
+        if hasattr(activity, "_prefetched_objects_cache"):
+            activity._prefetched_objects_cache.pop("eventos_status", None)
     except ValidationError as exc:
         raise DRFValidationError(exc.message_dict) from exc
     except IntegrityError as exc:
@@ -187,7 +196,7 @@ def salvar_activity(activity: Activity) -> Activity:
 
 
 @transaction.atomic
-def criar_activity(*, projeto: Project, dados: dict) -> Activity:
+def criar_activity(*, projeto: Project, dados: dict, usuario=None) -> Activity:
     no = resolver_no_para_activity(projeto, dados)
 
     tester = resolver_usuario_por_identificador(dados["testerId"], "testerId")
@@ -213,7 +222,7 @@ def criar_activity(*, projeto: Project, dados: dict) -> Activity:
         resultado_esperado=(dados.get("expectedResult") or "").strip(),
         observacoes=(dados.get("notes") or "").strip(),
     )
-    salvar_activity(activity)
+    salvar_activity(activity, usuario=usuario, origem="api")
 
     for predecessora in predecessoras:
         ActivityPredecessor.objects.create(atividade=activity, predecessora=predecessora)
@@ -222,7 +231,8 @@ def criar_activity(*, projeto: Project, dados: dict) -> Activity:
 
 
 @transaction.atomic
-def atualizar_activity(*, activity: Activity, dados: dict) -> Activity:
+def atualizar_activity(*, activity: Activity, dados: dict, usuario=None) -> Activity:
+    activity.refresh_from_db(from_queryset=Activity.objects.select_for_update().select_related("projeto"))
     if activity.status == Activity.Status.CANCELADO:
         raise DRFValidationError({"status": "Atividade cancelada não pode ser alterada."})
     if activity.status == Activity.Status.CONCLUIDO:
@@ -269,23 +279,24 @@ def atualizar_activity(*, activity: Activity, dados: dict) -> Activity:
         for predecessora in predecessoras:
             ActivityPredecessor.objects.create(atividade=activity, predecessora=predecessora)
 
-    return salvar_activity(activity)
+    return salvar_activity(activity, usuario=usuario, origem="api")
 
 
 @transaction.atomic
-def cancelar_activity(*, activity: Activity) -> Activity:
+def cancelar_activity(*, activity: Activity, usuario=None) -> Activity:
+    activity.refresh_from_db(from_queryset=Activity.objects.select_for_update().select_related("projeto"))
     if activity.status == Activity.Status.CANCELADO:
-        liberar_dependentes(activity)
+        liberar_dependentes(activity, usuario=usuario)
         return activity
     if activity.status == Activity.Status.CONCLUIDO:
         raise DRFValidationError({"status": "Atividade concluída não pode ser cancelada."})
     activity.status = Activity.Status.CANCELADO
-    activity = salvar_activity(activity)
+    activity = salvar_activity(activity, usuario=usuario, origem="api")
 
     from apps.issues.services import cancelar_issues_da_activity
 
     cancelar_issues_da_activity(activity)
-    liberar_dependentes(activity)
+    liberar_dependentes(activity, usuario=usuario)
     return activity
 
 
@@ -298,6 +309,7 @@ def concluir_activity(
     evidencia_file=None,
     usuario: Usuario | None = None,
 ) -> Activity:
+    activity.refresh_from_db(from_queryset=Activity.objects.select_for_update().select_related("projeto"))
     if activity.status != Activity.Status.LIBERADO:
         raise DRFValidationError({"status": "Somente atividade liberada pode ser concluída."})
     if activity.projeto.exigir_evidencia_atividade and not evidencia_aprovacao and evidencia_file is None:
@@ -316,7 +328,7 @@ def concluir_activity(
     activity.data_conclusao_real = timezone.localdate()
     activity.observacao_aprovacao = observacao_aprovacao.strip()
     activity.evidencia_aprovacao = evidencia_aprovacao
-    activity = salvar_activity(activity)
+    activity = salvar_activity(activity, usuario=usuario, origem="api")
     from apps.issues.models import Issue
 
     activity.issues.filter(status=Issue.Status.SOLUCAO_PROPOSTA).update(
@@ -324,16 +336,18 @@ def concluir_activity(
         resolvida_em=timezone.now(),
         atualizada_em=timezone.now(),
     )
-    liberar_dependentes(activity)
+    liberar_dependentes(activity, usuario=usuario)
     return activity
 
 
 @transaction.atomic
-def bloquear_activity(*, activity: Activity, motivo: str = "") -> Activity:
+def bloquear_activity(*, activity: Activity, motivo: str = "", usuario=None) -> Activity:
+    activity.refresh_from_db(from_queryset=Activity.objects.select_for_update().select_related("projeto"))
     if activity.status != Activity.Status.LIBERADO:
         raise DRFValidationError({"status": "Somente atividade liberada pode ser bloqueada."})
     activity.status = Activity.Status.BLOQUEADO
-    activity.numero_retest += 1
+    if not activity.data_inicio_real:
+        activity.data_inicio_real = timezone.localdate()
     if motivo:
         activity.observacoes = motivo.strip()
-    return salvar_activity(activity)
+    return salvar_activity(activity, usuario=usuario, origem="api", motivo=motivo)

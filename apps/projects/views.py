@@ -1,5 +1,7 @@
 from django.http import HttpResponse
-from django.db.models import Count, Q
+from django.db.models import Count, Q, OuterRef, Subquery, Sum
+from apps.activities.models import Activity
+from .spi import spi_weights
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.generics import ListAPIView
@@ -39,12 +41,16 @@ class ProjectPagination(PageNumberPagination):
 
 class ProjectQuerysetMixin:
     def base_queryset(self):
+        ev, pv = spi_weights()
+        weights = Activity.objects.filter(projeto=OuterRef("pk")).exclude(status="CANCELADO").order_by().values("projeto").annotate(ev=Sum(ev), pv=Sum(pv))
         return Project.objects.filter(ativo=True).prefetch_related(
             "memberships__usuario",
             "memberships__papel",
         ).annotate(
             active_activity_count=Count("activities", filter=~Q(activities__status="CANCELADO"), distinct=True),
             completed_activity_count=Count("activities", filter=Q(activities__status="CONCLUIDO"), distinct=True),
+            spi_ev=Subquery(weights.values("ev")[:1]),
+            spi_pv=Subquery(weights.values("pv")[:1]),
         ).order_by(
             "-criado_em",
             "nome",
