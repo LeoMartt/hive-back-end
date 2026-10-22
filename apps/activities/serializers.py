@@ -47,7 +47,7 @@ class ActivitySerializer(serializers.ModelSerializer):
     rejectedAt = serializers.SerializerMethodField()
     createdAt = serializers.DateTimeField(source="criado_em", read_only=True)
     updatedAt = serializers.DateTimeField(source="atualizado_em", read_only=True)
-    auditTrail = serializers.JSONField(source="historico_status", read_only=True)
+    auditTrail = serializers.SerializerMethodField()
 
     class Meta:
         model = Activity
@@ -137,6 +137,13 @@ class ActivitySerializer(serializers.ModelSerializer):
     def get_rejectedAt(self, activity: Activity):
         return None
 
+    def get_auditTrail(self, activity):
+        return [{"at": event.ocorrido_em.isoformat(), "text": event.texto,
+            "authorName": event.autor_nome, "authorId": str(event.autor_id) if event.autor_id else None,
+            "source": event.origem, "reason": event.motivo,
+            "fromStatus": event.status_anterior, "toStatus": event.status_novo}
+            for event in activity.eventos_status.all()]
+
 
 class ActivitySummarySerializer(ActivitySerializer):
     class Meta(ActivitySerializer.Meta):
@@ -146,6 +153,12 @@ class ActivitySummarySerializer(ActivitySerializer):
 
 
 class ActivityWriteSerializer(serializers.Serializer):
+    def to_internal_value(self, data):
+        protected = {"auditTrail", "historico_status", "numero_retest", "retestCount"} & set(data)
+        if protected:
+            raise serializers.ValidationError({field: "Campo controlado pelo sistema e não editável." for field in protected})
+        return super().to_internal_value(data)
+
     nodeId = serializers.UUIDField(required=False)
     module = serializers.CharField(max_length=100, required=False, allow_blank=True)
     process = serializers.CharField(max_length=100, required=False, allow_blank=True)

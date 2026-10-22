@@ -92,28 +92,33 @@ def resolver_desenvolvedor(projeto: Project, dados: dict) -> Usuario:
     return usuario
 
 
-def bloquear_activity_por_issue_impeditiva(activity: Activity) -> None:
+def bloquear_activity_por_issue_impeditiva(activity: Activity, usuario=None) -> None:
+    activity = Activity.objects.select_for_update().get(pk=activity.pk)
     if activity.status == Activity.Status.BLOQUEADO:
         return
     if activity.status in [Activity.Status.CONCLUIDO, Activity.Status.CANCELADO]:
         raise ValidationError({"relatedActivityId": "Atividade concluída ou cancelada não pode ser bloqueada por issue."})
     activity.status = Activity.Status.BLOQUEADO
-    activity.numero_retest += 1
-    salvar_activity(activity)
+    if not activity.data_inicio_real:
+        activity.data_inicio_real = timezone.localdate()
+    salvar_activity(activity, usuario=usuario, origem="issue", motivo="Abertura de issue impeditiva")
 
 
-def liberar_activity_se_sem_issues_bloqueadoras(activity: Activity) -> None:
+def liberar_activity_se_sem_issues_bloqueadoras(activity: Activity, usuario=None) -> None:
+    activity = Activity.objects.select_for_update().get(pk=activity.pk)
     if activity.status != Activity.Status.BLOQUEADO:
         return
     if activity.issues.filter(impeditiva=True, status__in=STATUS_BLOQUEADORES_DA_ACTIVITY).exists():
         return
     activity.status = status_liberado_por_predecessoras(list(activity.predecessoras.all()))
-    salvar_activity(activity)
+    salvar_activity(activity, usuario=usuario, origem="issue", motivo="Sem issues impeditivas abertas ou em análise")
 
 
 @transaction.atomic
 def criar_issue(*, projeto: Project, usuario: Usuario, dados: dict, opening_file=None) -> Issue:
-    activity = dados["activity"]
+    if projeto.modo == Project.Modo.CUTOVER and not dados.get("impeditiva"):
+        raise ValidationError({"impeditiva": "No Cutover, toda issue deve ser impeditiva."})
+    activity = Activity.objects.select_for_update().get(pk=dados["activity"].pk)
     if activity.projeto_id != projeto.id:
         raise ValidationError({"relatedActivityId": "Atividade deve pertencer ao projeto."})
     if activity.status in [Activity.Status.CANCELADO, Activity.Status.CONCLUIDO]:
@@ -146,12 +151,14 @@ def criar_issue(*, projeto: Project, usuario: Usuario, dados: dict, opening_file
         )
         issue.save(update_fields=["anexo_abertura", "atualizada_em"])
     if issue.impeditiva:
-        bloquear_activity_por_issue_impeditiva(activity)
+        bloquear_activity_por_issue_impeditiva(activity, usuario=usuario)
     return issue
 
 
 @transaction.atomic
 def iniciar_analise_issue(*, issue: Issue, usuario: Usuario) -> Issue:
+    Activity.objects.select_for_update().get(pk=issue.atividade_id)
+    issue = Issue.objects.select_for_update().select_related("projeto", "atividade").get(pk=issue.pk)
     exigir_dev_da_issue_ou_gestor(usuario, issue)
     if issue.status != Issue.Status.ABERTA:
         raise ValidationError({"status": "Somente issue aberta pode iniciar análise."})
@@ -163,6 +170,8 @@ def iniciar_analise_issue(*, issue: Issue, usuario: Usuario) -> Issue:
 
 @transaction.atomic
 def propor_solucao_issue(*, issue: Issue, usuario: Usuario, dados: dict, solution_file=None) -> Issue:
+    Activity.objects.select_for_update().get(pk=issue.atividade_id)
+    issue = Issue.objects.select_for_update().select_related("projeto", "atividade").get(pk=issue.pk)
     exigir_dev_da_issue_ou_gestor(usuario, issue)
     validar_arquivo_evidencia(solution_file, limite_mb=issue.projeto.anexo_max_mb, field_name="solutionFile")
     if issue.status != Issue.Status.EM_ANALISE:
@@ -190,7 +199,7 @@ def propor_solucao_issue(*, issue: Issue, usuario: Usuario, dados: dict, solutio
         ]
     )
     if issue.impeditiva:
-        liberar_activity_se_sem_issues_bloqueadoras(issue.atividade)
+        liberar_activity_se_sem_issues_bloqueadoras(issue.atividade, usuario=usuario)
     return issue
 
 
@@ -200,6 +209,8 @@ def atividade_tem_issues_abertas(activity: Activity) -> bool:
 
 @transaction.atomic
 def concluir_issue(*, issue: Issue, usuario: Usuario) -> Issue:
+    Activity.objects.select_for_update().get(pk=issue.atividade_id)
+    issue = Issue.objects.select_for_update().select_related("projeto", "atividade").get(pk=issue.pk)
     exigir_acao(usuario, issue.projeto, "issues_resolve", issue=issue)
     if issue.status != Issue.Status.SOLUCAO_PROPOSTA:
         raise ValidationError({"status": "Somente issue com solução proposta pode ser concluída."})
@@ -209,13 +220,15 @@ def concluir_issue(*, issue: Issue, usuario: Usuario) -> Issue:
     issue.save(update_fields=["status", "resolvida_em", "atualizada_em"])
 
     if issue.impeditiva:
-        liberar_activity_se_sem_issues_bloqueadoras(issue.atividade)
+        liberar_activity_se_sem_issues_bloqueadoras(issue.atividade, usuario=usuario)
 
     return issue
 
 
 @transaction.atomic
 def cancelar_issue(*, issue: Issue, usuario: Usuario) -> Issue:
+    Activity.objects.select_for_update().get(pk=issue.atividade_id)
+    issue = Issue.objects.select_for_update().select_related("projeto", "atividade").get(pk=issue.pk)
     exigir_acao(usuario, issue.projeto, "issues_cancel", issue=issue)
     if issue.status != Issue.Status.EM_ANALISE:
         raise ValidationError({"status": "Somente issue em análise pode ser cancelada."})
@@ -223,7 +236,7 @@ def cancelar_issue(*, issue: Issue, usuario: Usuario) -> Issue:
     issue.resolvida_em = timezone.now()
     issue.save(update_fields=["status", "resolvida_em", "atualizada_em"])
     if issue.impeditiva:
-        liberar_activity_se_sem_issues_bloqueadoras(issue.atividade)
+        liberar_activity_se_sem_issues_bloqueadoras(issue.atividade, usuario=usuario)
     return issue
 
 

@@ -109,7 +109,8 @@ class ActivityViewTests(APITestCase):
                 self.assertEqual(response.status_code, 200)
                 dependent.refresh_from_db()
                 self.assertEqual(dependent.status, Activity.Status.LIBERADO)
-                self.assertEqual(dependent.historico_status[-1]["text"], "Aguardando → Liberado")
+                self.assertEqual(dependent.eventos_status.last().texto, "Aguardando → Liberado")
+                self.assertEqual(dependent.eventos_status.last().autor, self.gestor)
 
     def test_multiplas_predecessoras_exigem_todas_resolvidas_e_preservam_bloqueio(self):
         self.client.force_authenticate(user=self.gestor)

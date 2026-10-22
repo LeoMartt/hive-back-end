@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from apps.activities.models import Activity
@@ -68,6 +69,11 @@ class Issue(models.Model):
         ordering = ["-criada_em", "-id"]
         verbose_name = "issue"
         verbose_name_plural = "issues"
+
+    def clean(self):
+        super().clean()
+        if self.projeto_id and self.projeto.modo == Project.Modo.CUTOVER and not self.impeditiva:
+            raise ValidationError({"impeditiva": "No Cutover, toda issue deve ser impeditiva."})
 
     @property
     def codigo_visivel(self) -> str:

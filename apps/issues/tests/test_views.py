@@ -125,7 +125,7 @@ class IssueViewTests(APITestCase):
         self.assertEqual(issue.atividade, activity)
         self.assertEqual(issue.status, Issue.Status.ABERTA)
         self.assertEqual(activity.status, Activity.Status.BLOQUEADO)
-        self.assertEqual(activity.numero_retest, 1)
+        self.assertEqual(activity.numero_retest, 0)
         self.assertEqual(issue.tester, self.tester)
         self.assertEqual(issue.desenvolvedor, self.dev)
         self.assertEqual(response.data["id"], issue.codigo_visivel)
@@ -365,7 +365,9 @@ class IssueViewTests(APITestCase):
         self.assertEqual(issue.solucao_proposta, "Ajustado cálculo de ICMS.")
         self.assertEqual(activity.status, Activity.Status.LIBERADO)
         self.assertIsNotNone(response.data["solutionProposedAt"])
-        self.assertEqual(activity.historico_status[-1]["text"], "Bloqueado → Liberado")
+        self.assertEqual(activity.eventos_status.last().texto, "Bloqueado → Liberado")
+        self.assertEqual(activity.eventos_status.last().autor, self.dev)
+        self.assertEqual(activity.numero_retest, 1)
 
     @patch("apps.issues.services.upload_evidencia")
     def test_dev_propoe_solucao_com_upload_real_de_evidencia(self, upload_evidencia):

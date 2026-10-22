@@ -294,7 +294,7 @@ def _validate_import_rows(project: Project, raw_rows: list[dict[str, Any]]) -> l
 
 
 @transaction.atomic
-def importar_activities_de_arquivo(*, projeto: Project, uploaded_file) -> list[Activity]:
+def importar_activities_de_arquivo(*, projeto: Project, uploaded_file, usuario=None) -> list[Activity]:
     rows = _validate_import_rows(projeto, _read_uploaded_file(uploaded_file))
     activities_by_temporary_id: dict[int, Activity] = {}
     created_activities: list[Activity] = []
@@ -315,7 +315,7 @@ def importar_activities_de_arquivo(*, projeto: Project, uploaded_file) -> list[A
             resultado_esperado=row.expected_result,
             observacoes=row.notes,
         )
-        salvar_activity(activity)
+        salvar_activity(activity, usuario=usuario, origem="importacao")
         activities_by_temporary_id[row.temporary_id] = activity
         created_activities.append(activity)
 

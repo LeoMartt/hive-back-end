@@ -11,6 +11,8 @@ Este repositório é **só o backend** (Django + DRF). O frontend (React) vive e
 
 ## Estado atual do repositório
 
+Em 22/10/2026: Cutover exige issues impeditivas; retestes contam BLOQUEADO -> LIBERADO com issue, nao abertura/bloqueio; SPI agora e EV/PV com 0/50/100 (inicio real para EV 50%). ActivityStatusEvent substitui JSON como trilha oficial, com autor/snapshots e triggers append-only. Historico legado congelado e migrado sem inventar autores. Ver `docs/regras_execucao_auditoria_spi.md`; migrations activities.0007 e 0008. Esta decisao substitui referencias anteriores conflitantes.
+
 Em 21/10/2026: matriz por projeto em `matriz_permissoes`, com controle de Gestor preservado e verificacoes de acao no backend; `issue_analise_automatica` afeta somente novas issues; `historico_politicas` registra mudancas pela API. Concluir atividade fecha suas issues SOLUCAO_PROPOSTA na mesma transacao. Ver `docs/matriz_dinamica_e_analise_automatica.md`. Migration projects.0006. Dados antigos podem ser revisados com `reconciliar_issues_concluidas` (simulacao por padrao).
 
 Decisao de alteracao de evidencias (2026-10-20): configuracoes podem mudar com confirmacao no frontend e contagem de atividades pendentes; nao ha invalidacao ou cobranca retroativa. A regra vigente vale na proxima conclusao/abertura, sem congelar a regra na criacao da atividade. Mudancas pela API/Admin geram EvidenceRuleChange com autor, data e antes/depois. Ver `docs/regras_alteracao_evidencias.md`.

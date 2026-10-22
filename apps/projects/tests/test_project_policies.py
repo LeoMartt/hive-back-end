@@ -169,7 +169,7 @@ class ProjectPolicyTests(APITestCase):
             self.configure(project, {"issueAutoAnalysis": True})
             self.client.force_authenticate(self.tester)
             payload = {"title": "Nova", "description": "Problema", "type": "dados", "impact": "alto",
-                "impeditiva": False, "relatedActivityId": activity.codigo_visivel, "developerId": str(self.dev.id)}
+                "impeditiva": project.modo == Project.Modo.CUTOVER, "relatedActivityId": activity.codigo_visivel, "developerId": str(self.dev.id)}
             response = self.client.post(self.route("issues", "list", project), payload, format="json")
             self.assertEqual(response.status_code, 201, response.data)
             self.assertEqual(response.data["status"], "em_analise")

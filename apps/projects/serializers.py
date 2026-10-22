@@ -5,6 +5,7 @@ from apps.activities.models import Activity
 from .models import Membership, NoHierarquia, Papel, Project
 from .services import resolver_codigo_papel
 from .permissions import matriz_efetiva, validar_matriz
+from .spi import calcular_spi
 
 
 class TeamMemberSerializer(serializers.ModelSerializer):
@@ -81,7 +82,9 @@ class ProjectListSerializer(serializers.ModelSerializer):
         return round((self.get_completedCount(project) / total) * 100)
 
     def get_spi(self, project: Project):
-        return None
+        if hasattr(project, "spi_pv"):
+            return project.spi_ev / project.spi_pv if project.spi_pv else None
+        return calcular_spi(project.activities.all())
 
 
 class ProjectDetailSerializer(ProjectListSerializer):

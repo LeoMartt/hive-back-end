@@ -85,6 +85,8 @@ class ActivityCollectionView(ActivityQuerysetMixin, APIView):
         serializer_class = ActivitySummarySerializer if request.query_params.get("view") == "summary" else ActivitySerializer
         if serializer_class is ActivitySummarySerializer:
             queryset = queryset.defer("historico_status", "evidencia_aprovacao", "resultado_esperado", "observacoes", "observacao_aprovacao")
+        else:
+            queryset = queryset.prefetch_related("eventos_status")
         ids = request.query_params.get("ids")
         if ids is not None:
             queryset = queryset.filter(id__in=[part for part in ids.split(",") if part.isdigit()])
@@ -96,7 +98,7 @@ class ActivityCollectionView(ActivityQuerysetMixin, APIView):
         exigir_acao(request.user, project, "activities_create")
         serializer = ActivityCreateSerializer(data=request.data, context={"project": project})
         serializer.is_valid(raise_exception=True)
-        activity = criar_activity(projeto=project, dados=serializer.validated_data)
+        activity = criar_activity(projeto=project, dados=serializer.validated_data, usuario=request.user)
         return Response(ActivitySerializer(activity).data, status=status.HTTP_201_CREATED)
 
 
@@ -110,8 +112,8 @@ class ActivityImportView(ActivityQuerysetMixin, APIView):
         if uploaded_file is None:
             return Response({"file": "Envie o arquivo no campo file."}, status=status.HTTP_400_BAD_REQUEST)
 
-        activities = importar_activities_de_arquivo(projeto=project, uploaded_file=uploaded_file)
-        serializer = ActivitySerializer(self.activity_queryset(project).filter(id__in=[activity.id for activity in activities]), many=True)
+        activities = importar_activities_de_arquivo(projeto=project, uploaded_file=uploaded_file, usuario=request.user)
+        serializer = ActivitySerializer(self.activity_queryset(project).filter(id__in=[activity.id for activity in activities]).prefetch_related("eventos_status"), many=True)
         return Response(
             {"created": len(activities), "activities": serializer.data},
             status=status.HTTP_201_CREATED,
@@ -138,7 +140,7 @@ class ActivityDetailView(ActivityQuerysetMixin, APIView):
             context={"project": project, "activity": activity},
         )
         serializer.is_valid(raise_exception=True)
-        activity = atualizar_activity(activity=activity, dados=serializer.validated_data)
+        activity = atualizar_activity(activity=activity, dados=serializer.validated_data, usuario=request.user)
         return Response(ActivitySerializer(activity).data)
 
 
@@ -147,7 +149,7 @@ class ActivityCancelView(ActivityQuerysetMixin, APIView):
         project = self.visible_project(project_id)
         activity = self.get_activity(project, activity_id)
         exigir_acao(request.user, project, "activities_cancel", activity=activity)
-        activity = cancelar_activity(activity=activity)
+        activity = cancelar_activity(activity=activity, usuario=request.user)
         return Response(ActivitySerializer(activity).data)
 
 
@@ -190,5 +192,6 @@ class ActivityBlockView(ActivityQuerysetMixin, APIView):
         activity = bloquear_activity(
             activity=activity,
             motivo=serializer.validated_data.get("reason") or "",
+            usuario=request.user,
         )
         return Response(ActivitySerializer(activity).data)
