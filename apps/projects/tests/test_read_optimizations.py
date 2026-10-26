@@ -107,13 +107,13 @@ class ReadOptimizationTests(APITestCase):
         response = self.client.get(self.url("projects", "dashboard"), {"today": "2026-10-04"})
         self.assertEqual(response.status_code, 200, response.data)
         data = response.data
-        self.assertEqual(data["activities"], {"total": 3, "concluido": 1, "liberado": 1, "bloqueado": 0, "aguardando": 0, "atrasado": 0})
+        self.assertEqual(data["activities"], {"total": 3, "concluido": 1, "liberado": 1, "bloqueado": 0, "aguardando": 0, "cancelado": 1, "atrasado": 0})
         self.assertEqual(data["issues"]["canceladas"], 1)
         self.assertEqual(data["issues"]["tempoMedioResolucaoDias"], 2)
         self.assertAlmostEqual(data["spi"], 1 / 1.5)
         self.assertEqual(data["indicators"], {"pace": 100, "quality": 100, "backlog": 50})
         self.assertEqual(data["curve"]["labels"], ["01/10", "02/10", "03/10", "04/10", "05/10"])
-        self.assertEqual(data["curve"]["plannedCounts"], [0, 0, 1, 1, 2])
+        self.assertEqual(data["curve"]["plannedCounts"], [1, 1, 1.5, 1.5, 2])
         self.assertEqual(data["curve"]["realizedCounts"], [0, 1, 1, 1, None])
         self.assertEqual(len(data["recent"]), 5)
         self.assertNotIn("description", data)
@@ -145,3 +145,35 @@ class ReadOptimizationTests(APITestCase):
         for index in range(20):
             self.issue(self.activity(nome=f"More {index}"))
         self.assertEqual(self.query_count(url), before)
+
+    def test_curve_matches_spi_weights_on_reference_day(self):
+        self.activity(status="CONCLUIDO", data_conclusao_planejada=date(2026, 10, 10),
+            data_inicio_real=date(2026, 10, 2), data_conclusao_real=date(2026, 10, 3))
+        self.activity(data_conclusao_planejada=date(2026, 10, 10), data_inicio_real=date(2026, 10, 4))
+        self.activity(data_conclusao_planejada=date(2026, 10, 10))
+        self.activity(status="CANCELADO", data_conclusao_real=date(2026, 10, 1))
+        data = self.client.get(self.url("projects", "dashboard"), {"today": "2026-10-05"}).data
+        index = data["curve"]["labels"].index("05/10")
+        self.assertEqual(data["curve"]["plannedCounts"][index], 1.5)
+        self.assertEqual(data["curve"]["realizedCounts"][index], 1.5)
+        self.assertEqual(data["curve"]["planned"][index], 50)
+        self.assertEqual(data["curve"]["realized"][index], 50)
+        self.assertEqual(data["curve"]["realizedCounts"][index] / data["curve"]["plannedCounts"][index], data["spi"])
+        self.assertIsNone(data["curve"]["realizedCounts"][index + 1])
+        self.assertEqual(data["curve"]["planned"][-1], 100)
+
+    def test_curve_same_day_completion_start_before_plan_and_future_plan(self):
+        self.activity(status="CONCLUIDO", data_inicio_planejada=date(2026, 10, 3), data_conclusao_planejada=date(2026, 10, 3),
+            data_inicio_real=date(2026, 10, 1), data_conclusao_real=date(2026, 10, 3))
+        data = self.client.get(self.url("projects", "dashboard"), {"today": "2026-10-03"}).data
+        self.assertEqual(data["curve"]["plannedCounts"], [1])
+        self.assertEqual(data["curve"]["realizedCounts"], [1])
+        data = self.client.get(self.url("projects", "dashboard"), {"today": "2026-10-02"}).data
+        self.assertTrue(all(value is None for value in data["curve"]["realized"]))
+        self.assertIsNone(data["spi"])
+
+    def test_curve_completed_missing_end_reflects_reference_snapshot_not_invented_past_date(self):
+        self.activity(status="CONCLUIDO", data_inicio_real=date(2026, 10, 2))
+        data = self.client.get(self.url("projects", "dashboard"), {"today": "2026-10-05"}).data
+        self.assertEqual(data["curve"]["realizedCounts"], [0, 0.5, 0.5, 0.5, 1])
+        self.assertEqual(data["spi"], 1)

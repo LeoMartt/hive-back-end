@@ -16,7 +16,7 @@ Decisoes de 22/10/2026. Substituem as regras anteriores conflitantes.
 - Duas issues bloqueadoras nao geram dois retestes: a primeira solucao nao libera a atividade; a ultima permite liberar e gera um reteste.
 - Repetir uma chamada depois da liberacao nao incrementa novamente. Validacoes de estado e bloqueios transacionais evitam reprocessamento da mesma transicao.
 - Cancelar atividade nao conta reteste. Se a retirada do bloqueio levar a AGUARDANDO por predecessoras pendentes, nao ocorreu BLOQUEADO -> LIBERADO e o contador nao aumenta nessa transicao.
-- Bloquear por issue ou manualmente registra inicio real se ainda nao existir. Abrir a pagina continua sem alterar estado ou datas. Nao foi recriado Em execucao.
+- Criar qualquer issue, impeditiva ou nao, registra inicio real se ainda nao existir, usando a data local da primeira issue. Bloquear manualmente tambem registra inicio real. Se nenhuma execucao anterior existir, a conclusao registra inicio e fim reais juntos. Liberacao por predecessoras, cancelamento e abrir a pagina nao iniciam a execucao por si so. Nao foi recriado Em execucao.
 - A migration reconcilia contadores antigos somente quando todas as entradas de bloqueio registradas explicam exatamente o contador anterior e existe issue vinculada. A correcao gera um novo evento, sem reescrever o historico. Casos sem evidencia suficiente nao sao estimados.
 
 ## SPI = EV / PV, pesos iguais por atividade
@@ -35,7 +35,13 @@ PV (valor planejado):
 
 SPI e a soma de EV dividida pela soma de PV. Com PV zero, retorna null (sem valor), nao zero nem infinito. Pode ultrapassar 1 em situacao de adiantamento. Uma atividade planejada para iniciar e terminar no mesmo dia conta 100% de PV nesse dia.
 
-O backend usa a mesma regra na listagem/detalhe do projeto e no dashboard; o calculo local dos mocks tambem foi atualizado. A Curva S permanece com conclusoes acumuladas pelas respectivas datas, conforme a decisao anterior, nao com os pesos parciais do SPI.
+O backend usa a mesma regra na listagem/detalhe do projeto e no dashboard; o calculo local dos mocks tambem foi atualizado. A Curva S agora usa os mesmos pesos 0/50/100: planejado pelas datas planejadas, realizado pelas datas reais, ambos divididos pela quantidade de atividades nao canceladas. Esta decisao substitui a curva anterior de conclusoes acumuladas. No dia de referencia, EV/PV dos pontos da curva coincide com o SPI; percentuais arredondados na tela podem produzir pequena diferenca se forem divididos manualmente.
+
+O realizado nao e projetado depois do dia de referencia; o planejado continua ate a ultima conclusao planejada. Cada atividade vale 0,5 ponto no inicio e mais 0,5 na conclusao. Tooltip mostra pontos, sem denominador, nao uma quantidade fracionaria de atividades. Uma atividade iniciada e liberada apos reteste continua com 50% de EV, nao volta a zero.
+
+Datas inconsistentes: uma atividade marcada Concluido mas sem conclusao real nao fornece prova da data historica da conclusao. A curva conserva os 50% do inicio comprovado e reflete 100% somente na fotografia do dia de referencia, sem gravar uma data ficticia. Uma conclusao real futura em um registro ja concluido recebe o mesmo tratamento. O caminho normal de conclusao sempre grava a data real; esses fallbacks sao defensivos para dados externos/antigos. Atividade nao concluida nao recebe 100% apenas por ter uma data final indevida.
+
+Para dados antigos sem inicio real, `python manage.py reconciliar_inicio_real` simula a recuperacao por primeira issue, bloqueio registrado ou conclusao real. Com `--apply`, preenche apenas datas ausentes e acrescenta evento de auditoria de correcao. Reexecucao nao sobrescreve datas nem duplica eventos. Sem prova consistente, nao estima datas.
 
 ## Auditoria de atividades
 

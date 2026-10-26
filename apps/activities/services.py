@@ -177,13 +177,20 @@ def salvar_activity(activity: Activity, *, usuario=None, origem="sistema", motiv
                 activity.numero_retest += 1
         activity.full_clean()
         activity.save()
-        if anterior is None or anterior.status != activity.status:
+        inicio_registrado = anterior is not None and anterior.data_inicio_real != activity.data_inicio_real
+        if anterior is None or anterior.status != activity.status or inicio_registrado:
+            if anterior is None:
+                texto = "Atividade criada"
+            elif anterior.status != activity.status:
+                texto = f"{Activity.Status(anterior.status).label} → {Activity.Status(activity.status).label}"
+            else:
+                texto = f"Início real registrado: {activity.data_inicio_real:%d/%m/%Y}" if activity.data_inicio_real else "Início real removido"
             ActivityStatusEvent.objects.create(
                 atividade=activity, autor=usuario,
                 autor_nome=(usuario.first_name or usuario.username) if usuario else "Sistema / autor não informado",
                 autor_email=usuario.email if usuario else "",
                 status_anterior=anterior.status if anterior else "", status_novo=activity.status,
-                texto=f"{Activity.Status(anterior.status).label} → {Activity.Status(activity.status).label}" if anterior else "Atividade criada",
+                texto=texto,
                 origem=origem, motivo=motivo, atividade_nome=activity.nome,
             )
         if hasattr(activity, "_prefetched_objects_cache"):
@@ -324,7 +331,8 @@ def concluir_activity(
         )
     activity.status = Activity.Status.CONCLUIDO
     if not activity.data_inicio_real:
-        activity.data_inicio_real = timezone.localdate()
+        primeira_issue = activity.issues.order_by("criada_em", "pk").values_list("criada_em", flat=True).first()
+        activity.data_inicio_real = timezone.localdate(primeira_issue) if primeira_issue else timezone.localdate()
     activity.data_conclusao_real = timezone.localdate()
     activity.observacao_aprovacao = observacao_aprovacao.strip()
     activity.evidencia_aprovacao = evidencia_aprovacao
