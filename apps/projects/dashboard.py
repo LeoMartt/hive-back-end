@@ -26,6 +26,7 @@ def dashboard_do_projeto(project, today=None):
     activity_stats = {
         "total": total, "concluido": completed, "liberado": counts.get("LIBERADO", 0),
         "bloqueado": counts.get("BLOQUEADO", 0), "aguardando": counts.get("AGUARDANDO", 0),
+        "cancelado": counts.get("CANCELADO", 0),
         "atrasado": activities.exclude(status__in=["CONCLUIDO", "CANCELADO"]).filter(data_conclusao_planejada__lt=today).count(),
     }
     duration = issues.filter(status="CONCLUIDA", resolvida_em__gte=F("criada_em")).aggregate(
@@ -47,18 +48,29 @@ def dashboard_do_projeto(project, today=None):
         "quality": percentage(indicators["no_retest"], completed),
         "backlog": percentage(counts.get("AGUARDANDO", 0) + counts.get("LIBERADO", 0), active_total),
     }
-    # Only scheduling dates are loaded; cumulative counts are built once per day.
+    # Two half-point deltas per activity reproduce the SPI's 0/50/100 weights.
     dates = list(activities.exclude(status="CANCELADO").values_list(
-        "data_inicio_planejada", "data_conclusao_planejada", "data_conclusao_real",
+        "data_inicio_planejada", "data_conclusao_planejada", "data_inicio_real", "data_conclusao_real", "status",
     ))
     curve = {"labels": ["Hoje"], "planned": [0], "plannedCounts": [0], "realized": [0], "realizedCounts": [0], "total": 0}
     if dates:
         start = min(row[0] for row in dates)
         last_planned = max(row[1] for row in dates)
-        realized_end = max([today, start] + [row[2] for row in dates if row[2] is not None])
-        end = max(last_planned, realized_end)
-        planned_by_day = Counter(row[1] for row in dates)
-        actual_by_day = Counter(row[2] for row in dates if row[2] is not None)
+        realized_end = today
+        end = max(last_planned, realized_end, start)
+        planned_by_day = Counter()
+        actual_by_day = Counter()
+        for planned_start, planned_end, actual_start, actual_end, status in dates:
+            planned_by_day[min(planned_start, planned_end)] += 0.5
+            planned_by_day[planned_end] += 0.5
+            if status == "CONCLUIDO":
+                # Missing/invalid completion dates cannot establish a past event:
+                # reflect the known completed status at the reference date only.
+                completed_at = min(actual_end or today, today)
+                actual_by_day[min(actual_start, completed_at) if actual_start else completed_at] += 0.5
+                actual_by_day[completed_at] += 0.5
+            elif actual_start is not None:
+                actual_by_day[actual_start] += 0.5
         planned_count = sum(count for day, count in planned_by_day.items() if day < start)
         actual_count = sum(count for day, count in actual_by_day.items() if day < start)
         curve = {"labels": [], "planned": [], "plannedCounts": [], "realized": [], "realizedCounts": [], "total": len(dates)}

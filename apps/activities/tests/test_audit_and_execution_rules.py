@@ -1,10 +1,12 @@
-from datetime import date
+from datetime import date, datetime, timezone as datetime_timezone
+from io import StringIO
 from importlib import import_module
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.apps import apps
 from django.core.exceptions import ValidationError
+from django.core.management import call_command
 from django.db import DatabaseError, connection, transaction
 from django.urls import reverse
 from rest_framework.test import APITestCase
@@ -213,3 +215,58 @@ class AuditAndExecutionRulesTests(APITestCase):
         self.assertEqual(calcular_spi(activity.projeto.activities.all(), date(2026, 10, 2)), 1)
         self.assertEqual(calcular_spi(activity.projeto.activities.all(), date(2026, 10, 5)), 0.5)
         self.assertIsNone(calcular_spi(activity.projeto.activities.all(), date(2026, 9, 30)))
+
+    def test_any_issue_records_first_actual_start_and_list_exposes_it(self):
+        for impeditiva in (False, True):
+            activity = self.activity()
+            response = self.issue(activity, impeditiva)
+            self.assertEqual(response.status_code, 201)
+            issue = activity.issues.get()
+            activity.refresh_from_db()
+            from django.utils import timezone
+            self.assertEqual(activity.data_inicio_real, timezone.localdate(issue.criada_em))
+            self.assertEqual(activity.status, "BLOQUEADO" if impeditiva else "LIBERADO")
+            self.assertEqual(activity.numero_retest, 0)
+            original_start = activity.data_inicio_real
+            self.issue(activity, impeditiva)
+            activity.refresh_from_db()
+            self.assertEqual(activity.data_inicio_real, original_start)
+            self.assertEqual(activity.eventos_status.last().autor, self.tester)
+            data = self.client.get(reverse("activities:list", kwargs={"project_id": activity.projeto_id}), {"view": "summary"}).data
+            self.assertEqual(next(row for row in data if row["id"] == activity.codigo_visivel)["actualStart"], original_start.isoformat())
+
+    def test_issue_records_start_even_if_already_blocked(self):
+        activity = self.activity()
+        Activity.objects.filter(pk=activity.pk).update(status="BLOQUEADO")
+        self.assertEqual(self.issue(activity).status_code, 201)
+        activity.refresh_from_db()
+        self.assertIsNotNone(activity.data_inicio_real)
+        self.assertEqual(activity.numero_retest, 0)
+        self.assertTrue(activity.eventos_status.last().texto.startswith("Início real registrado:"))
+
+    def test_conclusion_without_issue_records_start_and_end_together(self):
+        activity = self.activity()
+        self.assertIsNone(activity.data_inicio_real)
+        concluir_activity(activity=activity, usuario=self.tester)
+        self.assertIsNotNone(activity.data_inicio_real)
+        self.assertEqual(activity.data_inicio_real, activity.data_conclusao_real)
+
+    def test_reconcile_actual_start_simulates_then_uses_earliest_issue_without_overwriting_audit(self):
+        activity = self.activity()
+        before = list(activity.eventos_status.values("id", "texto"))
+        for day in (7, 1):
+            issue = Issue.objects.create(projeto=activity.projeto, atividade=activity, titulo="Old issue", descricao="Old", tipo="DADOS", impacto="ALTO",
+                impeditiva=False, tester=self.tester, desenvolvedor=self.dev)
+            Issue.objects.filter(pk=issue.pk).update(criada_em=datetime(2026, 9, day, 14, tzinfo=datetime_timezone.utc))
+        call_command("reconciliar_inicio_real", stdout=StringIO())
+        activity.refresh_from_db()
+        self.assertIsNone(activity.data_inicio_real)
+        call_command("reconciliar_inicio_real", apply=True, stdout=StringIO())
+        activity.refresh_from_db()
+        self.assertEqual(activity.data_inicio_real, date(2026, 9, 1))
+        self.assertEqual(list(activity.eventos_status.values("id", "texto"))[:len(before)], before)
+        self.assertEqual(activity.eventos_status.last().origem, "reconciliacao_inicio")
+        self.assertEqual(activity.status, "LIBERADO")
+        count = activity.eventos_status.count()
+        call_command("reconciliar_inicio_real", apply=True, stdout=StringIO())
+        self.assertEqual(activity.eventos_status.count(), count)

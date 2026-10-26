@@ -92,9 +92,14 @@ def resolver_desenvolvedor(projeto: Project, dados: dict) -> Usuario:
     return usuario
 
 
-def bloquear_activity_por_issue_impeditiva(activity: Activity, usuario=None) -> None:
+def bloquear_activity_por_issue_impeditiva(activity: Activity, usuario=None, iniciado_em=None) -> None:
     activity = Activity.objects.select_for_update().get(pk=activity.pk)
+    inicio_ausente = activity.data_inicio_real is None
+    if inicio_ausente:
+        activity.data_inicio_real = timezone.localdate(iniciado_em or timezone.now())
     if activity.status == Activity.Status.BLOQUEADO:
+        if inicio_ausente:
+            salvar_activity(activity, usuario=usuario, origem="issue", motivo="Início real registrado pela abertura de issue")
         return
     if activity.status in [Activity.Status.CONCLUIDO, Activity.Status.CANCELADO]:
         raise ValidationError({"relatedActivityId": "Atividade concluída ou cancelada não pode ser bloqueada por issue."})
@@ -151,7 +156,10 @@ def criar_issue(*, projeto: Project, usuario: Usuario, dados: dict, opening_file
         )
         issue.save(update_fields=["anexo_abertura", "atualizada_em"])
     if issue.impeditiva:
-        bloquear_activity_por_issue_impeditiva(activity, usuario=usuario)
+        bloquear_activity_por_issue_impeditiva(activity, usuario=usuario, iniciado_em=issue.criada_em)
+    elif activity.data_inicio_real is None:
+        activity.data_inicio_real = timezone.localdate(issue.criada_em)
+        salvar_activity(activity, usuario=usuario, origem="issue", motivo=f"Abertura da issue {issue.codigo_visivel}, não impeditiva")
     return issue
 
 
